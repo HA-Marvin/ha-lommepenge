@@ -63,11 +63,11 @@
         },
         "pair": {
           "title": "Scan med {name}",
-          "description": "Scan QR-koden med enhedens kamera, installér appen, og tryk på \"Åbn appen og forbind\".\n\n![QR-kode]({qr_url})\n\nEller åbn dette link på enheden: {install_url}\n\nKoden virker én gang, indtil kl. {expires}. Tryk Send, når du er færdig."
+          "description": "**Med kamera:** scan QR-koden, installér appen, og tryk på \"Åbn appen og forbind\".\n\n![QR-kode]({qr_url})\n\n**Uden kamera:** åbn {apk_url} i enhedens browser, og installér appen. Vælg derefter \"Forbind med kode\" i appen, og indtast\n\n- Home Assistant: `{base_url}`\n- Kode: **{code}**\n\nKoden virker én gang, indtil kl. {expires}. Tryk Send, når du er færdig."
         },
         "reconfigure": {
           "title": "Ny QR-kode til {name}",
-          "description": "Bruges efter en geninstallation af appen på enheden. Den gamle forbindelse holder op med at virke, når enheden forbinder igen.\n\n![QR-kode]({qr_url})\n\nEller åbn: {install_url}\n\nGælder til kl. {expires}."
+          "description": "Bruges efter en geninstallation af appen på enheden. Den gamle forbindelse holder op med at virke, når enheden forbinder igen.\n\n![QR-kode]({qr_url})\n\nUden kamera: \"Forbind med kode\" i appen med Home Assistant `{base_url}` og koden **{code}** (gælder til kl. {expires})."
         }
       },
       "error": {
@@ -91,31 +91,61 @@
   },
   "entity": {
     "sensor": {
-      "pending_approvals": { "name": "Venter på godkendelse" },
-      "balance": { "name": "Saldo" },
-      "earned_this_week": { "name": "Optjent denne uge" },
-      "last_seen": { "name": "Sidste kontakt" }
+      "pending_approvals": {
+        "name": "Venter på godkendelse"
+      },
+      "balance": {
+        "name": "Saldo"
+      },
+      "earned_this_week": {
+        "name": "Optjent denne uge"
+      },
+      "last_seen": {
+        "name": "Sidste kontakt"
+      }
     },
     "binary_sensor": {
-      "restricted": { "name": "Tablet spærret" },
-      "overdue": { "name": "Forsinket opgave" }
+      "restricted": {
+        "name": "Tablet spærret"
+      },
+      "overdue": {
+        "name": "Forsinket opgave"
+      }
     },
     "button": {
-      "suspend_restriction": { "name": "Ophæv spærring i dag" }
+      "suspend_restriction": {
+        "name": "Ophæv spærring i dag"
+      }
     },
     "time": {
-      "default_due_time": { "name": "Standardfrist" },
-      "restriction_start": { "name": "Spærretid fra" },
-      "restriction_end": { "name": "Spærretid til" }
+      "default_due_time": {
+        "name": "Standardfrist"
+      },
+      "restriction_start": {
+        "name": "Spærretid fra"
+      },
+      "restriction_end": {
+        "name": "Spærretid til"
+      }
     },
     "number": {
-      "late_pause_minutes": { "name": "Pausetid ved for sent" },
-      "warning_minutes": { "name": "Advarsel før frist" },
-      "winter_from_week": { "name": "Vinter fra uge" },
-      "winter_to_week": { "name": "Vinter til uge" }
+      "late_pause_minutes": {
+        "name": "Pausetid ved for sent"
+      },
+      "warning_minutes": {
+        "name": "Advarsel før frist"
+      },
+      "winter_from_week": {
+        "name": "Vinter fra uge"
+      },
+      "winter_to_week": {
+        "name": "Vinter til uge"
+      }
     },
     "update": {
-      "app": { "name": "App" }
+      "app": {
+        "name": "App"
+      }
     }
   },
   "services": {
@@ -123,21 +153,30 @@
       "name": "Godkend opgave",
       "description": "Godkender en udført opgave, så beløbet lægges til barnets saldo.",
       "fields": {
-        "completion_id": { "name": "Udførelses-id", "description": "completionId fra hændelsen lommepenge_event." }
+        "completion_id": {
+          "name": "Udførelses-id",
+          "description": "completionId fra hændelsen lommepenge_event."
+        }
       }
     },
     "reject": {
       "name": "Afvis opgave",
       "description": "Afviser en udført opgave. Barnet kan lave den igen.",
       "fields": {
-        "completion_id": { "name": "Udførelses-id", "description": "completionId fra hændelsen lommepenge_event." }
+        "completion_id": {
+          "name": "Udførelses-id",
+          "description": "completionId fra hændelsen lommepenge_event."
+        }
       }
     },
     "suspend_restriction": {
       "name": "Ophæv spærring i dag",
       "description": "Ophæver barnets spærring resten af dagen.",
       "fields": {
-        "child_id": { "name": "Barn-id", "description": "Attributten child_id på barnets sensor \"Tablet spærret\"." }
+        "child_id": {
+          "name": "Barn-id",
+          "description": "Attributten child_id på barnets sensor \"Tablet spærret\"."
+        }
       }
     }
   }

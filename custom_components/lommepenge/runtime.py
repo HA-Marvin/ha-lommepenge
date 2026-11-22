@@ -12,6 +12,7 @@ from collections.abc import Callable
 from datetime import datetime
 import hashlib
 import hmac
+import re
 import secrets
 import time
 from typing import Any
@@ -40,6 +41,19 @@ from .family import Family, FamilyError
 STORAGE_VERSION = 1
 SAVE_DELAY = 2
 
+# Parringskoden kan tastes på en enhed uden kamera: 8 tegn uden forvekslelige
+# tegn (0/O, 1/I). Den virker én gang i 15 minutter, og efter mange forkerte
+# forsøg afvises parring et stykke tid.
+CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+CODE_LENGTH = 8
+MAX_FAILED_PAIRINGS = 10
+FAILED_PAIRING_WINDOW = 300  # sekunder
+
+
+def normalize_code(code: str) -> str:
+    """Store bogstaver, uden mellemrum og bindestreger."""
+    return re.sub(r"[^A-Z0-9]", "", code.upper())
+
 
 class AuthError(Exception):
     """Enheden er ukendt, tilbagekaldt, eller signaturen passer ikke."""
@@ -47,6 +61,10 @@ class AuthError(Exception):
 
 class PairingError(Exception):
     """Parringslinket er ugyldigt, udløbet eller allerede brugt."""
+
+
+class TooManyPairingAttempts(PairingError):
+    """For mange forkerte koder - prøv igen om lidt."""
 
 
 class ForbiddenError(Exception):
@@ -77,6 +95,7 @@ class LommepengeRuntime:
         self.devices: dict[str, dict[str, Any]] = {}
         self.pairings: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
+        self._failed_pairings: list[float] = []
         self._listeners: list[Callable[[], None]] = []
         # Sættes af __init__.py, når koordinatorerne er oprettet.
         self.coordinator = None
@@ -169,8 +188,8 @@ class LommepengeRuntime:
     def async_create_pairing(
         self, device_id: str, name: str, role: str, child_id: str | None
     ) -> tuple[str, datetime]:
-        """Nyt engangs-link til en enhed. Returnerer token og udløb (UTC)."""
-        token = secrets.token_urlsafe(18)
+        """Ny engangskode til en enhed. Returnerer koden og udløb (UTC)."""
+        token = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
         expires = dt_util.utcnow() + PAIRING_TTL
         # Kun ét gyldigt link pr. enhed ad gangen.
         self.pairings = {
@@ -188,7 +207,7 @@ class LommepengeRuntime:
 
     def pairing(self, token: str) -> dict[str, Any] | None:
         """Et gyldigt (ikke udløbet) parringslink, også hvis det er brugt."""
-        pairing = self.pairings.get(token)
+        pairing = self.pairings.get(normalize_code(token))
         if pairing is None:
             return None
         if dt_util.parse_datetime(pairing["expires"]) < dt_util.utcnow():
@@ -196,11 +215,21 @@ class LommepengeRuntime:
         return pairing
 
     async def async_redeem_pairing(self, token: str, app_info: dict[str, Any]) -> dict[str, Any]:
-        """Bytter et parringslink til enhedens egen nøgle (kun én gang)."""
+        """Bytter en parringskode til enhedens egen nøgle (kun én gang)."""
+        now = time.monotonic()
+        self._failed_pairings = [
+            t for t in self._failed_pairings if now - t < FAILED_PAIRING_WINDOW
+        ]
+        if len(self._failed_pairings) >= MAX_FAILED_PAIRINGS:
+            raise TooManyPairingAttempts(
+                "For mange forkerte koder. Vent fem minutter, og prøv igen."
+            )
         pairing = self.pairing(token)
         if pairing is None or pairing.get("used"):
+            self._failed_pairings.append(now)
             raise PairingError(
-                "Linket er udløbet eller allerede brugt. Lav en ny QR-kode i Home Assistant."
+                "Koden er forkert, udløbet eller allerede brugt. Lav en ny under "
+                "Lommepenge → Tilføj enhed i Home Assistant."
             )
         pairing["used"] = True
         device = {

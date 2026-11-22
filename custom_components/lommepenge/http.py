@@ -7,6 +7,7 @@ får adgang til resten af Home Assistant.
     GET  /api/lommepenge/install/{token}        installationsside (QR-koden)
     GET  /api/lommepenge/qr/{token}.svg         QR-koden til "Tilføj enhed"
     GET  /api/lommepenge/download/{token}/...   APK til første installation
+    GET  /api/lommepenge/app.apk                APK uden kode (enheder uden kamera)
     POST /api/lommepenge/pair                   parringslink -> enhedsnøgle
     GET  /api/lommepenge/state                  familiens data   (signeret)
     POST /api/lommepenge/action                 udfør handling   (signeret)
@@ -35,7 +36,13 @@ from homeassistant.util import network as network_util
 from .const import API_PREFIX, DOMAIN, ROLE_CHILD, ROLE_PARENT, ROLE_SCREEN
 from .family import FamilyError
 from .releases import GitHubError
-from .runtime import AuthError, ForbiddenError, LommepengeRuntime, PairingError
+from .runtime import (
+    AuthError,
+    ForbiddenError,
+    LommepengeRuntime,
+    PairingError,
+    TooManyPairingAttempts,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,23 +65,32 @@ def async_register_views(hass: HomeAssistant) -> None:
         StateView,
         ActionView,
         UpdateApkView,
+        AppApkView,
     ):
         hass.http.register_view(view())
 
 
-def install_url(hass: HomeAssistant, token: str) -> str:
-    """Link i QR-koden. Bruger HA's lokale IP, så en ny telefon kan nå det
-    uden at kende `homeassistant.local`."""
+def base_url(hass: HomeAssistant) -> str:
+    """HA's adresse på hjemmenettet. Bruger den lokale IP, så en ny enhed kan
+    nå den uden at kende `homeassistant.local`."""
     api = hass.config.api
     if api is not None and api.local_ip and api.local_ip != "127.0.0.1":
         scheme = "https" if api.use_ssl else "http"
-        base = f"{scheme}://{api.local_ip}:{api.port}"
-    else:
-        try:
-            base = get_url(hass, allow_external=False, allow_cloud=False, prefer_external=False)
-        except NoURLAvailableError:
-            base = ""
-    return f"{base}{API_PREFIX}/install/{token}"
+        return f"{scheme}://{api.local_ip}:{api.port}"
+    try:
+        return get_url(hass, allow_external=False, allow_cloud=False, prefer_external=False)
+    except NoURLAvailableError:
+        return ""
+
+
+def install_url(hass: HomeAssistant, token: str) -> str:
+    """Link i QR-koden (og til at taste i en browser)."""
+    return f"{base_url(hass)}{API_PREFIX}/install/{token}"
+
+
+def app_url(hass: HomeAssistant) -> str:
+    """Fast link til appen - kræver ingen kode."""
+    return f"{base_url(hass)}{API_PREFIX}/app.apk"
 
 
 def _runtime(request: web.Request) -> LommepengeRuntime:
@@ -256,6 +272,8 @@ class PairView(_LocalView):
                     "appVersionCode": body.get("appVersionCode"),
                 },
             )
+        except TooManyPairingAttempts as err:
+            return _error(HTTPStatus.TOO_MANY_REQUESTS, str(err))
         except PairingError as err:
             return _error(HTTPStatus.GONE, str(err))
         return web.json_response(
@@ -304,6 +322,19 @@ class ActionView(_SignedView):
         except FamilyError as err:
             return _error(HTTPStatus.BAD_REQUEST, str(err))
         return web.json_response(runtime.state_for(device))
+
+
+class AppApkView(_LocalView):
+    """Appen uden kode, til at taste i en browser på en enhed uden kamera.
+    APK'en er alligevel offentlig på GitHub; den kan ikke forbinde til noget
+    uden en parringskode."""
+
+    url = f"{API_PREFIX}/app.apk"
+    name = "api:lommepenge:app"
+
+    async def get(self, request: web.Request) -> web.StreamResponse:
+        _require_local(request)
+        return await _stream_apk(request, _runtime(request))
 
 
 class UpdateApkView(_SignedView):

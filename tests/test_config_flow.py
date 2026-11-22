@@ -109,6 +109,12 @@ async def test_add_screen_device(
     assert placeholders["install_url"].startswith("http://")
     token = placeholders["install_url"].rsplit("/", 1)[1]
     assert placeholders["qr_url"] == f"/api/lommepenge/qr/{token}.svg"
+    # Uden kamera: kort kode, HA's adresse og et fast link til appen.
+    assert placeholders["code"] == token
+    base = placeholders["base_url"]
+    assert base.startswith("http://") and base.endswith(":8123")
+    assert placeholders["apk_url"] == f"{base}/api/lommepenge/app.apk"
+    assert placeholders["install_url"] == f"{base}/api/lommepenge/install/{token}"
 
     # Enheden scanner og forbinder, mens dialogen står åben.
     client = await hass_client_no_auth()

@@ -217,3 +217,48 @@ async def test_app_download_and_update_info(
     assert update.state == "on"
     assert update.attributes["installed_version"] == "1.0.0"
     assert update.attributes["latest_version"] == "1.1.0"
+
+
+async def test_code_can_be_typed(
+    hass: HomeAssistant, config_entry: MockConfigEntry, hass_client_no_auth
+) -> None:
+    runtime = await setup_entry(hass, config_entry)
+    client = await hass_client_no_auth()
+    code, _ = runtime.async_create_pairing("dev-k", "Køleskab", ROLE_SCREEN, None)
+    assert len(code) == 8 and code.isalnum() and code.isupper()
+    assert not set(code) & set("01IO")
+
+    # Små bogstaver og bindestreg som en person taster den.
+    typed = f"{code[:4].lower()}-{code[4:].lower()}"
+    assert (await AppClient(client).pair(typed))["status"] == 200
+
+
+async def test_wrong_codes_are_rate_limited(
+    hass: HomeAssistant, config_entry: MockConfigEntry, hass_client_no_auth
+) -> None:
+    runtime = await setup_entry(hass, config_entry)
+    client = await hass_client_no_auth()
+    code, _ = runtime.async_create_pairing("dev-k", "Køleskab", ROLE_SCREEN, None)
+    for _ in range(10):
+        assert (await AppClient(client).pair("FORKERT1"))["status"] == 410
+    # Nu afvises også den rigtige kode et stykke tid.
+    result = await AppClient(client).pair(code)
+    assert result["status"] == 429
+    assert "Vent fem minutter" in result["error"]
+
+
+async def test_app_link_without_code(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    hass_client_no_auth,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    await setup_entry(hass, config_entry)
+    client = await hass_client_no_auth()
+    # Ingen release endnu.
+    assert (await client.get("/api/lommepenge/app.apk")).status == 404
+
+    mock_github(aioclient_mock)
+    await config_entry.runtime_data.releases.async_refresh()
+    response = await client.get("/api/lommepenge/app.apk")
+    assert response.status == 200 and await response.read() == b"APK!"

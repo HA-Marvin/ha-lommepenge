@@ -140,6 +140,17 @@ void main() {
       expect(link.token, 'xyz');
     });
 
+    test('kode tastet i hånden: adresse uden skema og port virker', () {
+      final link = connectLinkFromCode('192.168.1.10', 'k7m2-qdxa ')!;
+      expect(link.baseUrl.toString(), 'http://192.168.1.10:8123');
+      expect(link.token, 'K7M2QDXA');
+      final https = connectLinkFromCode('https://ha.local:443', 'AB')!.baseUrl;
+      expect(https.scheme, 'https');
+      expect(https.port, 443);
+      expect(connectLinkFromCode('', 'AB'), isNull);
+      expect(connectLinkFromCode('192.168.1.10', '  '), isNull);
+    });
+
     test('andre links afvises', () {
       expect(parseConnectLink('https://example.com/noget'), isNull);
       expect(parseConnectLink('lommepenge://pair?token=x'), isNull);
@@ -211,6 +222,13 @@ void main() {
         await appState.connectWithLink(ha.installLink('t1')),
         'Linket er udløbet.',
       );
+    });
+
+    test('forbind med kode (uden kamera)', () async {
+      ha.tokens['K7M2QDXA'] = (role: 'screen', childId: null);
+      final address = '127.0.0.1:${ha.server.port}';
+      expect(await appState.connectWithCode(address, 'k7m2qdxa'), isNull);
+      expect(appState.isScreen, isTrue);
     });
 
     test('barnets tablet: ét barn, ingen PIN, kan ikke skifte rolle', () async {

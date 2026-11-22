@@ -645,6 +645,20 @@ class AppState extends ChangeNotifier {
         'Det er ikke et Lommepenge-link fra Home Assistant.',
       );
     }
+    return _connect(link);
+  }
+
+  /// Forbinder med HA's adresse og koden fra "Tilføj enhed" - til enheder
+  /// uden kamera.
+  Future<String?> connectWithCode(String address, String code) async {
+    final link = connectLinkFromCode(address, code);
+    if (link == null) {
+      return _connectionFailed('Skriv Home Assistants adresse og koden.');
+    }
+    return _connect(link);
+  }
+
+  Future<String?> _connect(ConnectLink link) async {
     if (isChildTablet && isConnected) {
       // En barne-tablet kan ikke skiftes til en anden rolle ved at scanne en
       // ny kode - kun ved geninstallation.

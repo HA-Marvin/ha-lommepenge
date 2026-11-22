@@ -41,6 +41,12 @@ kun sit eget barn og kan kun markere dets opgaver udført – det håndhæves
 af HA. Slettes enheden i HA, mister den adgangen med det samme.
 *Omkonfigurér* på en enhed giver en ny QR-kode (fx efter geninstallation).
 
+**Enhed uden kamera** (fx en skærm på køleskabet): åbn
+`http://<HA>:8123/api/lommepenge/app.apk` i enhedens browser og installér
+appen. Vælg derefter *Forbind med kode* i appen og tast HA's adresse og
+koden på 8 tegn, som står under QR-koden i "Tilføj enhed". Efter 10
+forkerte koder afviser HA parring i 5 minutter.
+
 ## Hvad du får
 
 **Pr. barn** (én HA-enhed pr. barn, følger appens navne):

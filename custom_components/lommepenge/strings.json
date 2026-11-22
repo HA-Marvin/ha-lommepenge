@@ -63,11 +63,11 @@
         },
         "pair": {
           "title": "Scan with {name}",
-          "description": "Scan the QR code with the device's camera, install the app, and tap \"Open the app and connect\".\n\n![QR code]({qr_url})\n\nOr open this link on the device: {install_url}\n\nThe code works once, until {expires}. Press Submit when you are done."
+          "description": "**With a camera:** scan the QR code, install the app, and tap \"Open the app and connect\".\n\n![QR code]({qr_url})\n\n**Without a camera:** open {apk_url} in the device's browser and install the app. Then choose \"Connect with code\" in the app and enter\n\n- Home Assistant: `{base_url}`\n- Code: **{code}**\n\nThe code works once, until {expires}. Press Submit when you are done."
         },
         "reconfigure": {
           "title": "New QR code for {name}",
-          "description": "Use this after reinstalling the app on the device. The old connection stops working once the device connects again.\n\n![QR code]({qr_url})\n\nOr open: {install_url}\n\nValid until {expires}."
+          "description": "Use this after reinstalling the app on the device. The old connection stops working once the device connects again.\n\n![QR code]({qr_url})\n\nWithout a camera: \"Connect with code\" in the app with Home Assistant `{base_url}` and code **{code}** (valid until {expires})."
         }
       },
       "error": {
@@ -91,31 +91,61 @@
   },
   "entity": {
     "sensor": {
-      "pending_approvals": { "name": "Awaiting approval" },
-      "balance": { "name": "Balance" },
-      "earned_this_week": { "name": "Earned this week" },
-      "last_seen": { "name": "Last contact" }
+      "pending_approvals": {
+        "name": "Awaiting approval"
+      },
+      "balance": {
+        "name": "Balance"
+      },
+      "earned_this_week": {
+        "name": "Earned this week"
+      },
+      "last_seen": {
+        "name": "Last contact"
+      }
     },
     "binary_sensor": {
-      "restricted": { "name": "Tablet restricted" },
-      "overdue": { "name": "Overdue task" }
+      "restricted": {
+        "name": "Tablet restricted"
+      },
+      "overdue": {
+        "name": "Overdue task"
+      }
     },
     "button": {
-      "suspend_restriction": { "name": "Lift restriction today" }
+      "suspend_restriction": {
+        "name": "Lift restriction today"
+      }
     },
     "time": {
-      "default_due_time": { "name": "Default deadline" },
-      "restriction_start": { "name": "Restriction from" },
-      "restriction_end": { "name": "Restriction until" }
+      "default_due_time": {
+        "name": "Default deadline"
+      },
+      "restriction_start": {
+        "name": "Restriction from"
+      },
+      "restriction_end": {
+        "name": "Restriction until"
+      }
     },
     "number": {
-      "late_pause_minutes": { "name": "Pause when done late" },
-      "warning_minutes": { "name": "Warning before deadline" },
-      "winter_from_week": { "name": "Winter from week" },
-      "winter_to_week": { "name": "Winter until week" }
+      "late_pause_minutes": {
+        "name": "Pause when done late"
+      },
+      "warning_minutes": {
+        "name": "Warning before deadline"
+      },
+      "winter_from_week": {
+        "name": "Winter from week"
+      },
+      "winter_to_week": {
+        "name": "Winter until week"
+      }
     },
     "update": {
-      "app": { "name": "App" }
+      "app": {
+        "name": "App"
+      }
     }
   },
   "services": {
@@ -123,21 +153,30 @@
       "name": "Approve task",
       "description": "Approves a completed task so the amount is added to the child's balance.",
       "fields": {
-        "completion_id": { "name": "Completion ID", "description": "completionId from the lommepenge_event event." }
+        "completion_id": {
+          "name": "Completion ID",
+          "description": "completionId from the lommepenge_event event."
+        }
       }
     },
     "reject": {
       "name": "Reject task",
       "description": "Rejects a completed task. The child can do it again.",
       "fields": {
-        "completion_id": { "name": "Completion ID", "description": "completionId from the lommepenge_event event." }
+        "completion_id": {
+          "name": "Completion ID",
+          "description": "completionId from the lommepenge_event event."
+        }
       }
     },
     "suspend_restriction": {
       "name": "Lift restriction today",
       "description": "Lifts the child's restriction for the rest of today.",
       "fields": {
-        "child_id": { "name": "Child ID", "description": "The child_id attribute of the child's \"Tablet restricted\" sensor." }
+        "child_id": {
+          "name": "Child ID",
+          "description": "The child_id attribute of the child's \"Tablet restricted\" sensor."
+        }
       }
     }
   }

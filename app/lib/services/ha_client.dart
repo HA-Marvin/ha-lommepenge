@@ -57,6 +57,25 @@ ConnectLink? parseConnectLink(String text) {
   return null;
 }
 
+/// Parring med en kode tastet i hånden (enhed uden kamera): HA's adresse,
+/// fx `192.168.1.10` eller `http://homeassistant.local:8123`, og koden fra
+/// "Tilføj enhed". Mangler skema eller port, bruges `http` og 8123.
+ConnectLink? connectLinkFromCode(String address, String code) {
+  var text = address.trim();
+  if (text.isEmpty) return null;
+  if (!text.contains('://')) text = 'http://$text';
+  final uri = Uri.tryParse(text);
+  final normalizedCode = code.toUpperCase().replaceAll(RegExp('[^A-Z0-9]'), '');
+  if (uri == null || uri.host.isEmpty || normalizedCode.isEmpty) return null;
+  final base = Uri(
+    scheme: uri.scheme,
+    host: uri.host,
+    // Uri skjuler standardporte (fx :443), så se efter en port i teksten.
+    port: RegExp(r'://[^/]+:\d+').hasMatch(text) ? uri.port : 8123,
+  );
+  return ConnectLink(base, normalizedCode);
+}
+
 /// Svar fra parringen.
 class PairResult {
   final String? deviceId;
