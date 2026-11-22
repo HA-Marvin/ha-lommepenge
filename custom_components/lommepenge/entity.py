@@ -32,6 +32,14 @@ class LommepengeEntity(CoordinatorEntity[LommepengeCoordinator]):
         )
 
 
+def child_device_name(child: dict[str, Any]) -> str:
+    return f"Lommepenge {child.get('name', '')}".strip()
+
+
+def child_device_identifier(screen: str, child_id: str) -> tuple[str, str]:
+    return (DOMAIN, f"{screen}_{child_id}")
+
+
 class LommepengeChildEntity(CoordinatorEntity[LommepengeCoordinator]):
     """Entitet for ét barn - hvert barn får sin egen enhed i HA."""
 
@@ -46,8 +54,8 @@ class LommepengeChildEntity(CoordinatorEntity[LommepengeCoordinator]):
         self._attr_unique_id = f"{screen}_{child_id}_{key}"
         self._attr_translation_key = key
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{screen}_{child_id}")},
-            name=f"Lommepenge {child.get('name', '')}".strip(),
+            identifiers={child_device_identifier(screen, child_id)},
+            name=child_device_name(child),
             manufacturer="Lommepenge",
             model="Barn",
             via_device=(DOMAIN, screen),

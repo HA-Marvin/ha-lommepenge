@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from pytest_homeassistant_custom_component.common import async_capture_events
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
@@ -153,6 +153,49 @@ async def test_new_child_gets_entities(
     await hass.async_block_till_done()
 
     _entity_id(hass, "binary_sensor", f"{SCREEN_ID}_bella_restricted")
+
+
+async def test_renamed_and_deleted_children_follow_the_app(
+    hass: HomeAssistant,
+    setup_integration,
+    aioclient_mock: AiohttpClientMocker,
+    summary,
+) -> None:
+    dev_reg = dr.async_get(hass)
+    emma = dev_reg.async_get_device(identifiers={(DOMAIN, f"{SCREEN_ID}_emma")})
+    oskar_entity = _entity_id(hass, "binary_sensor", f"{SCREEN_ID}_oskar_restricted")
+    assert emma.name == "Lommepenge Emma"
+
+    summary["children"][0]["name"] = "Emilie"
+    del summary["children"][1]
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{BASE}/ha/summary", json=summary)
+    await setup_integration.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    assert dev_reg.async_get(emma.id).name == "Lommepenge Emilie"
+    assert dev_reg.async_get_device(identifiers={(DOMAIN, f"{SCREEN_ID}_oskar")}) is None
+    assert er.async_get(hass).async_get(oskar_entity) is None
+    # Skærmens egen enhed bliver stående.
+    assert dev_reg.async_get_device(identifiers={(DOMAIN, SCREEN_ID)}) is not None
+
+
+async def test_no_children_gives_only_screen_device(
+    hass: HomeAssistant,
+    config_entry,
+    aioclient_mock: AiohttpClientMocker,
+    summary,
+) -> None:
+    summary["children"] = []
+    summary["pending"] = []
+    aioclient_mock.get(f"{BASE}/ha/summary", json=summary)
+    aioclient_mock.post(f"{BASE}/ha/webhook", json={"ok": True})
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    devices = dr.async_entries_for_config_entry(dr.async_get(hass), config_entry.entry_id)
+    assert [d.identifiers for d in devices] == [{(DOMAIN, SCREEN_ID)}]
 
 
 async def test_unload(hass: HomeAssistant, setup_integration) -> None:

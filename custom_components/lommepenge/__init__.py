@@ -19,7 +19,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.typing import ConfigType
@@ -38,6 +38,7 @@ from .const import (
     SERVICE_SUSPEND_RESTRICTION,
 )
 from .coordinator import LommepengeConfigEntry, LommepengeCoordinator
+from .entity import child_device_identifier, child_device_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -146,6 +147,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: LommepengeConfigEntry) -
     await _async_send_webhook_url(hass, entry, api, webhook_id)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    @callback
+    def _sync_child_devices() -> None:
+        _async_sync_child_devices(hass, entry)
+
+    _sync_child_devices()
+    entry.async_on_unload(coordinator.async_add_listener(_sync_child_devices))
     return True
 
 
@@ -176,6 +184,50 @@ async def _async_send_webhook_url(
         await api.register_webhook(f"{base}{webhook.async_generate_path(webhook_id)}")
     except LommepengeError as err:
         _LOGGER.warning("Lommepenge: kunne ikke registrere webhook: %s", err)
+
+
+@callback
+def _async_sync_child_devices(hass: HomeAssistant, entry: LommepengeConfigEntry) -> None:
+    """Holder børnenes enheder i takt med appen.
+
+    Et barn der omdøbes i appen, får nyt navn i HA (medmindre brugeren selv
+    har navngivet enheden i HA), og et barn der slettes i appen, fjernes fra HA.
+    """
+    coordinator = entry.runtime_data
+    if not coordinator.last_update_success or coordinator.data is None:
+        return
+    screen = entry.unique_id or entry.entry_id
+    dev_reg = dr.async_get(hass)
+    current: set[tuple[str, str]] = set()
+    for child in coordinator.children:
+        if "id" not in child:
+            continue
+        identifier = child_device_identifier(screen, child["id"])
+        current.add(identifier)
+        device = dev_reg.async_get_device(identifiers={identifier})
+        name = child_device_name(child)
+        if device is not None and device.name != name:
+            dev_reg.async_update_device(device.id, name=name)
+
+    for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+        if (DOMAIN, screen) in device.identifiers:
+            continue
+        if not device.identifiers & current:
+            dev_reg.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: LommepengeConfigEntry, device: dr.DeviceEntry
+) -> bool:
+    """Tillad at slette et barns enhed i HA, når barnet ikke findes i appen."""
+    screen = entry.unique_id or entry.entry_id
+    if (DOMAIN, screen) in device.identifiers:
+        return False
+    return not any(
+        child_device_identifier(screen, child["id"]) in device.identifiers
+        for child in entry.runtime_data.children
+        if "id" in child
+    )
 
 
 def _loaded_entries(hass: HomeAssistant) -> list[LommepengeConfigEntry]:
