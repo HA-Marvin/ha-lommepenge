@@ -20,7 +20,7 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # Ikke (endnu) i home-assistant/brands.
+          # Not (yet) in home-assistant/brands.
           ignore: brands
 
   tests:
