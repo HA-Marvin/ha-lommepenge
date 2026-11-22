@@ -1,0 +1,20 @@
+{
+  "domain": "lommepenge",
+  "name": "Lommepenge",
+  "codeowners": [
+    "@HA-Marvin"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "webhook"
+  ],
+  "documentation": "https://github.com/HA-Marvin/ha-lommepenge",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/HA-Marvin/ha-lommepenge/issues",
+  "requirements": [],
+  "version": "0.1.0",
+  "zeroconf": [
+    "_lommepenge._tcp.local."
+  ]
+}

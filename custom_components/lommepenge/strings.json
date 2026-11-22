@@ -1,0 +1,92 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Connect to the family screen",
+        "description": "Enter the family screen's IP address (shown in the app under Parent mode → Pairing) and the family parent PIN.",
+        "data": {
+          "host": "IP address",
+          "port": "Port",
+          "pin": "Parent PIN"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Lommepenge found",
+        "description": "The family screen \"{name}\" ({host}) was found on the network. Confirm with the family parent PIN.",
+        "data": {
+          "pin": "Parent PIN"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect",
+        "description": "The connection was revoked in the app. Confirm with the parent PIN to reconnect.",
+        "data": {
+          "pin": "Parent PIN"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the family screen. Check the IP address and that the app is open on the screen.",
+      "invalid_auth": "Wrong PIN.",
+      "too_many_attempts": "Too many wrong PIN attempts. Wait a minute and try again.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This family screen is already set up.",
+      "reauth_successful": "Reconnected.",
+      "wrong_screen": "The PIN belongs to a different family screen."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "pending_approvals": { "name": "Awaiting approval" },
+      "balance": { "name": "Balance" },
+      "earned_this_week": { "name": "Earned this week" }
+    },
+    "binary_sensor": {
+      "restricted": { "name": "Tablet restricted" },
+      "overdue": { "name": "Overdue task" }
+    },
+    "button": {
+      "suspend_restriction": { "name": "Lift restriction today" }
+    },
+    "time": {
+      "default_due_time": { "name": "Default deadline" },
+      "restriction_start": { "name": "Restriction from" },
+      "restriction_end": { "name": "Restriction until" }
+    },
+    "number": {
+      "late_pause_minutes": { "name": "Pause when done late" },
+      "warning_minutes": { "name": "Warning before deadline" },
+      "winter_from_week": { "name": "Winter from week" },
+      "winter_to_week": { "name": "Winter to week" }
+    }
+  },
+  "services": {
+    "approve": {
+      "name": "Approve task",
+      "description": "Approves a completed task so the amount is added to the child's balance.",
+      "fields": {
+        "completion_id": { "name": "Completion ID", "description": "ID from the lommepenge_event event or the \"Awaiting approval\" sensor." },
+        "config_entry_id": { "name": "Family screen", "description": "Only needed with several screens." }
+      }
+    },
+    "reject": {
+      "name": "Reject task",
+      "description": "Rejects a completed task. The child has to do it again.",
+      "fields": {
+        "completion_id": { "name": "Completion ID", "description": "ID from the lommepenge_event event or the \"Awaiting approval\" sensor." },
+        "config_entry_id": { "name": "Family screen", "description": "Only needed with several screens." }
+      }
+    },
+    "suspend_restriction": {
+      "name": "Lift restriction today",
+      "description": "Lifts the child's restriction for the rest of today.",
+      "fields": {
+        "child_id": { "name": "Child ID", "description": "The child_id attribute of the child's \"Tablet restricted\" sensor." },
+        "config_entry_id": { "name": "Family screen", "description": "Only needed with several screens." }
+      }
+    }
+  }
+}

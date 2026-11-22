@@ -1,0 +1,117 @@
+blueprint:
+  name: Lommepenge – godkendelse via notifikation
+  description: >
+    Sender en notifikation med knapperne Godkend/Afvis til forældrenes
+    telefoner, når et barn har markeret en opgave udført. Kun tryk fra de
+    valgte forældre bliver udført. Når opgaven er afgjort (her eller i
+    appen), forsvinder notifikationen hos alle.
+  domain: automation
+  source_url: https://raw.githubusercontent.com/HA-Marvin/ha-lommepenge/main/blueprints/automation/lommepenge/godkendelse.yaml
+  input:
+    notify_services:
+      name: Forældrenes notify-tjenester
+      description: >
+        Én pr. linje, fx notify.mobile_app_pixel_8 (findes under
+        Udviklerværktøjer → Handlinger).
+      selector:
+        text:
+          multiple: true
+    parents:
+      name: Forældre der må godkende
+      description: Kun tryk fra disse personers HA-brugere bliver udført.
+      selector:
+        entity:
+          filter:
+            - domain: person
+          multiple: true
+
+mode: queued
+max: 25
+
+variables:
+  notify_services: !input notify_services
+  parents: !input parents
+  parent_user_ids: >
+    {{ parents | map('state_attr', 'user_id') | select('string') | list }}
+
+triggers:
+  - trigger: event
+    event_type: lommepenge_event
+    event_data:
+      event: completion_pending
+    id: ny
+  - trigger: event
+    event_type: lommepenge_event
+    event_data:
+      event: completion_approved
+    id: afgjort
+  - trigger: event
+    event_type: lommepenge_event
+    event_data:
+      event: completion_rejected
+    id: afgjort
+  - trigger: event
+    event_type: mobile_app_notification_action
+    id: svar
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: ny
+        sequence:
+          - variables:
+              cid: "{{ trigger.event.data.completionId }}"
+              kr: >
+                {{ ('%.2f' | format((trigger.event.data.amountOre | int(0)) / 100))
+                   | replace('.00', '') | replace('.', ',') }}
+              msg: >
+                {{ trigger.event.data.childName }} har lavet
+                "{{ trigger.event.data.taskTitle }}" – {{ kr }} kr
+                {%- if trigger.event.data.late %} (for sent){% endif %}
+          - repeat:
+              for_each: "{{ notify_services }}"
+              sequence:
+                - action: "{{ repeat.item }}"
+                  continue_on_error: true
+                  data:
+                    title: Lommepenge
+                    message: "{{ msg }}"
+                    data:
+                      tag: "lommepenge_{{ cid }}"
+                      actions:
+                        - action: "LOMMEPENGE_GODKEND_{{ cid }}"
+                          title: Godkend
+                        - action: "LOMMEPENGE_AFVIS_{{ cid }}"
+                          title: Afvis
+
+      - conditions:
+          - condition: trigger
+            id: afgjort
+        sequence:
+          - repeat:
+              for_each: "{{ notify_services }}"
+              sequence:
+                - action: "{{ repeat.item }}"
+                  continue_on_error: true
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "lommepenge_{{ trigger.event.data.completionId }}"
+
+      - conditions:
+          - condition: trigger
+            id: svar
+          - condition: template
+            value_template: >
+              {% set a = trigger.event.data.action | default('') %}
+              {{ a.startswith('LOMMEPENGE_GODKEND_') or a.startswith('LOMMEPENGE_AFVIS_') }}
+          - condition: template
+            value_template: "{{ trigger.event.context.user_id in parent_user_ids }}"
+        sequence:
+          - variables:
+              parts: "{{ trigger.event.data.action.split('_', 2) }}"
+          - action: >
+              {{ 'lommepenge.approve' if parts[1] == 'GODKEND' else 'lommepenge.reject' }}
+            data:
+              completion_id: "{{ parts[2] }}"

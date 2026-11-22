@@ -1,0 +1,92 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Forbind til køleskabsskærmen",
+        "description": "Indtast køleskabsskærmens IP-adresse (vises i appen under Forælder-tilstand → Parring) og familiens forælder-PIN.",
+        "data": {
+          "host": "IP-adresse",
+          "port": "Port",
+          "pin": "Forælder-PIN"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Lommepenge fundet",
+        "description": "Køleskabsskærmen \"{name}\" ({host}) er fundet på netværket. Bekræft med familiens forælder-PIN.",
+        "data": {
+          "pin": "Forælder-PIN"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Forbind igen",
+        "description": "Forbindelsen til køleskabsskærmen er afbrudt i appen. Bekræft med forælder-PIN for at forbinde igen.",
+        "data": {
+          "pin": "Forælder-PIN"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kunne ikke nå køleskabsskærmen. Tjek IP-adressen, og at appen er åben på skærmen.",
+      "invalid_auth": "Forkert PIN-kode.",
+      "too_many_attempts": "For mange forkerte PIN-forsøg. Vent et minut og prøv igen.",
+      "unknown": "Uventet fejl."
+    },
+    "abort": {
+      "already_configured": "Denne køleskabsskærm er allerede sat op.",
+      "reauth_successful": "Forbundet igen.",
+      "wrong_screen": "PIN-koden passer til en anden køleskabsskærm."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "pending_approvals": { "name": "Venter på godkendelse" },
+      "balance": { "name": "Saldo" },
+      "earned_this_week": { "name": "Optjent denne uge" }
+    },
+    "binary_sensor": {
+      "restricted": { "name": "Tablet spærret" },
+      "overdue": { "name": "Forsinket opgave" }
+    },
+    "button": {
+      "suspend_restriction": { "name": "Ophæv spærring i dag" }
+    },
+    "time": {
+      "default_due_time": { "name": "Standardfrist" },
+      "restriction_start": { "name": "Spærretid fra" },
+      "restriction_end": { "name": "Spærretid til" }
+    },
+    "number": {
+      "late_pause_minutes": { "name": "Pausetid ved for sent udført" },
+      "warning_minutes": { "name": "Advarsel før frist" },
+      "winter_from_week": { "name": "Vinter fra uge" },
+      "winter_to_week": { "name": "Vinter til uge" }
+    }
+  },
+  "services": {
+    "approve": {
+      "name": "Godkend opgave",
+      "description": "Godkender en udført opgave, så beløbet lægges til barnets saldo.",
+      "fields": {
+        "completion_id": { "name": "Udførelses-id", "description": "Id fra hændelsen lommepenge_event eller sensoren \"Venter på godkendelse\"." },
+        "config_entry_id": { "name": "Køleskabsskærm", "description": "Kun nødvendig med flere skærme." }
+      }
+    },
+    "reject": {
+      "name": "Afvis opgave",
+      "description": "Afviser en udført opgave. Barnet skal lave den igen.",
+      "fields": {
+        "completion_id": { "name": "Udførelses-id", "description": "Id fra hændelsen lommepenge_event eller sensoren \"Venter på godkendelse\"." },
+        "config_entry_id": { "name": "Køleskabsskærm", "description": "Kun nødvendig med flere skærme." }
+      }
+    },
+    "suspend_restriction": {
+      "name": "Ophæv spærring i dag",
+      "description": "Ophæver barnets spærring for resten af i dag.",
+      "fields": {
+        "child_id": { "name": "Barn-id", "description": "Attributten child_id på barnets \"Tablet spærret\"-sensor." },
+        "config_entry_id": { "name": "Køleskabsskærm", "description": "Kun nødvendig med flere skærme." }
+      }
+    }
+  }
+}

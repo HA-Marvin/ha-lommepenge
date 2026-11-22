@@ -1,0 +1,160 @@
+blueprint:
+  name: Lommepenge – spær tablet ved forsinket opgave
+  description: >
+    Tænder en kontakt (fx en UniFi-trafikregel der blokerer YouTube/spil
+    for barnets tablet), mens barnet har en forsinket obligatorisk opgave,
+    og slukker den igen når opgaven er markeret udført. Er
+    lommepenge-skærmen utilgængelig i over 10 minutter, slukkes kontakten,
+    så en fejl aldrig straffer barnet. Lav én automation pr. barn.
+  domain: automation
+  source_url: https://raw.githubusercontent.com/HA-Marvin/ha-lommepenge/main/blueprints/automation/lommepenge/spaerring.yaml
+  input:
+    restricted_sensor:
+      name: Barnets "Tablet spærret"-sensor
+      selector:
+        entity:
+          filter:
+            - integration: lommepenge
+              domain: binary_sensor
+    block_switch:
+      name: Kontakt der spærrer tabletten
+      description: >
+        Til = spærret. Fx UniFi-integrationens kontakt for en trafikregel,
+        der blokerer underholdning for netop denne tablet.
+      selector:
+        entity:
+          filter:
+            - domain: switch
+    notify_services:
+      name: Forældrenes notify-tjenester (valgfrit)
+      description: >
+        Får besked når tabletten spærres, med knappen "Ophæv spærring i dag".
+        Én pr. linje, fx notify.mobile_app_pixel_8.
+      default: []
+      selector:
+        text:
+          multiple: true
+    parents:
+      name: Forældre der må ophæve spærringen (valgfrit)
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: person
+          multiple: true
+
+mode: queued
+max: 10
+
+variables:
+  restricted_sensor: !input restricted_sensor
+  notify_services: !input notify_services
+  parents: !input parents
+  parent_user_ids: >
+    {{ parents | map('state_attr', 'user_id') | select('string') | list }}
+  child_id: "{{ state_attr(restricted_sensor, 'child_id') }}"
+  child_name: "{{ state_attr(restricted_sensor, 'child_name') or 'Barnet' }}"
+  tag: "lommepenge_spaerring_{{ child_id }}"
+
+triggers:
+  - trigger: state
+    entity_id: !input restricted_sensor
+    to: "on"
+    id: spaer
+  - trigger: state
+    entity_id: !input restricted_sensor
+    to: "off"
+    id: ophaev
+  - trigger: state
+    entity_id: !input restricted_sensor
+    to: "unavailable"
+    for: "00:10:00"
+    id: utilgaengelig
+  - trigger: homeassistant
+    event: start
+    id: start
+  - trigger: event
+    event_type: mobile_app_notification_action
+    id: knap
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: spaer
+        sequence:
+          - action: switch.turn_on
+            target:
+              entity_id: !input block_switch
+          - repeat:
+              for_each: "{{ notify_services }}"
+              sequence:
+                - action: "{{ repeat.item }}"
+                  continue_on_error: true
+                  data:
+                    title: "{{ child_name }}s tablet er spærret"
+                    message: "{{ state_attr(restricted_sensor, 'reason') or 'Forsinket opgave' }}"
+                    data:
+                      tag: "{{ tag }}"
+                      actions:
+                        - action: "LOMMEPENGE_OPHAEV_{{ child_id }}"
+                          title: Ophæv spærring i dag
+
+      - conditions:
+          - condition: trigger
+            id: ophaev
+        sequence:
+          - action: switch.turn_off
+            target:
+              entity_id: !input block_switch
+          - repeat:
+              for_each: "{{ notify_services }}"
+              sequence:
+                - action: "{{ repeat.item }}"
+                  continue_on_error: true
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "{{ tag }}"
+
+      - conditions:
+          - condition: trigger
+            id: utilgaengelig
+        sequence:
+          # Fail-open: en fejl i systemet må aldrig straffe barnet.
+          - action: switch.turn_off
+            target:
+              entity_id: !input block_switch
+          - repeat:
+              for_each: "{{ notify_services }}"
+              sequence:
+                - action: "{{ repeat.item }}"
+                  continue_on_error: true
+                  data:
+                    title: Lommepenge svarer ikke
+                    message: >
+                      Køleskabsskærmen har ikke svaret i 10 minutter, så
+                      {{ child_name }}s tablet er låst op.
+
+      - conditions:
+          - condition: trigger
+            id: start
+        sequence:
+          - action: >
+              switch.turn_{{ 'on' if is_state(restricted_sensor, 'on') else 'off' }}
+            target:
+              entity_id: !input block_switch
+
+      - conditions:
+          - condition: trigger
+            id: knap
+          - condition: template
+            value_template: >
+              {{ child_id and trigger.event.data.action | default('')
+                 == 'LOMMEPENGE_OPHAEV_' ~ child_id }}
+          - condition: template
+            value_template: "{{ trigger.event.context.user_id in parent_user_ids }}"
+        sequence:
+          - action: lommepenge.suspend_restriction
+            data:
+              child_id: "{{ child_id }}"
