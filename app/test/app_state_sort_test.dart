@@ -1,9 +1,9 @@
-// Tests for den "hvad skal gøres nu"-sortering AppState.refreshFromLocal
-// laver af opgavelisten inden i mandatory/valgfri-grupperne - se
+// Tests for the "what needs doing now" sorting AppState.refreshFromLocal
+// applies to the task list within the mandatory/optional groups - see
 // AppState._sortByUrgency / _taskSortTuple / _childSortTuple.
 //
-// Kører uden en rigtig Android/iOS-platform ved at bruge
-// sqflite_common_ffi (samme mønster som task_balance_test.dart).
+// Runs without a real Android/iOS platform by using sqflite_common_ffi (the
+// same pattern as task_balance_test.dart).
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -38,30 +38,30 @@ void main() {
     repository = TaskRepository(databaseHelper: dbHelper, settings: settings);
     appState = AppState(settings: settings, repository: repository);
 
-    childId = (await repository.addChild('Barn 1')).id;
+    childId = (await repository.addChild('Child 1')).id;
   });
 
   tearDown(() async {
     await dbHelper.close();
   });
 
-  group('Opgave-sortering ("hvad skal gøres nu")', () {
+  group('Task sorting ("what needs doing now")', () {
     test(
-        'uberørte opgaver (tier 0) kommer først, i oprettelsesrækkefølge - '
-        'en godkendt "unlimited"-completion i dag flytter opgaven ned på '
+        'untouched tasks (tier 0) come first, in creation order - an '
+        'approved "unlimited" completion today moves the task down to '
         'tier 2', () async {
       final t1 = await repository.createTask(
-        title: 'Første',
+        title: 'First',
         amountOre: 100,
         recurrence: Recurrence.unlimited,
       );
       final t2 = await repository.createTask(
-        title: 'Anden',
+        title: 'Second',
         amountOre: 100,
         recurrence: Recurrence.unlimited,
       );
       final t3 = await repository.createTask(
-        title: 'Tredje',
+        title: 'Third',
         amountOre: 100,
         recurrence: Recurrence.unlimited,
       );
@@ -70,11 +70,11 @@ void main() {
       expect(appState.tasks.map((t) => t.id).toList(),
           [t1.id, t2.id, t3.id]);
 
-      // t2 markeres udført og godkendes med det samme - 'unlimited' har
-      // ingen dags-nedkøling i computeAvailability (den er stadig
-      // "available"), men den nye sortering skal alligevel genkende at
-      // t2 reelt er udført i dag og sende den ned til tier 2, mens t1
-      // og t3 bliver liggende øverst i deres oprindelige rækkefølge.
+      // t2 is marked as done and approved right away - 'unlimited' has no
+      // daily cool-down in computeAvailability (it is still "available"),
+      // but the sorting must still recognise that t2 has actually been done
+      // today and move it down to tier 2, while t1 and t3 stay at the top in
+      // their original order.
       await repository.completeTask(t2.id, childId: childId);
       final pending = (await repository.getPendingCompletions())
           .firstWhere((c) => c.taskId == t2.id);
@@ -86,42 +86,42 @@ void main() {
     });
 
     test(
-        'en afventende godkendelse og en engangsopgave der allerede er '
-        'godkendt sorteres begge efter en uberørt, tilgængelig opgave',
+        'a pending approval and a one-off task that has already been '
+        'approved are both sorted after an untouched, available task',
         () async {
       final ready = await repository.createTask(
-        title: 'Klar til at udføre',
+        title: 'Ready to do',
         amountOre: 100,
         recurrence: Recurrence.daily,
       );
       final neverAgain = await repository.createTask(
-        title: 'Engangsopgave',
+        title: 'One-off task',
         amountOre: 100,
         recurrence: Recurrence.once,
       );
       final awaitingApproval = await repository.createTask(
-        title: 'Afventer godkendelse',
+        title: 'Awaiting approval',
         amountOre: 100,
         recurrence: Recurrence.daily,
       );
 
-      // 'neverAgain' udføres og godkendes -> completedOnce -> kan aldrig
-      // blive tilgængelig igen (tier 1).
+      // 'neverAgain' is done and approved -> completedOnce -> can never
+      // become available again (tier 1).
       await repository.completeTask(neverAgain.id, childId: childId);
       final neverAgainCompletion = (await repository.getPendingCompletions())
           .firstWhere((c) => c.taskId == neverAgain.id);
       await repository.approveCompletion(neverAgainCompletion.id);
 
-      // 'awaitingApproval' udføres, men godkendes IKKE -> pendingApproval
+      // 'awaitingApproval' is done, but NOT approved -> pendingApproval
       // (tier 2, dayOffset 0).
       await repository.completeTask(awaitingApproval.id, childId: childId);
 
       await appState.refreshFromLocal();
 
       final order = appState.tasks.map((t) => t.id).toList();
-      // 'ready' (tier 0) skal ligge før 'neverAgain' (tier 1), som igen
-      // skal ligge før 'awaitingApproval' (tier 2) - uanset hvilken
-      // rækkefølge de blev oprettet i.
+      // 'ready' (tier 0) must come before 'neverAgain' (tier 1), which in
+      // turn must come before 'awaitingApproval' (tier 2) - regardless of the
+      // order they were created in.
       expect(order.indexOf(ready.id), lessThan(order.indexOf(neverAgain.id)));
       expect(order.indexOf(neverAgain.id),
           lessThan(order.indexOf(awaitingApproval.id)));

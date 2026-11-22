@@ -1,16 +1,14 @@
-/// Et barn i familien.
+/// A child in the family.
 ///
-/// Appen understøttede indtil videre kun ét barn implicit - dette er den
-/// nye model der gør familien til en liste af navngivne børn. Der er
-/// bevidst intet hårdt kodet loft på antal børn nogen steder i modellen,
-/// databasen eller forretningslogikken (UI'et er tænkt/testet mentalt
-/// til typisk 1-3, men understøtter flere).
+/// The family is a list of named children. There is deliberately no hard-coded
+/// limit on the number of children anywhere in the model, the database or the
+/// business logic (the UI is designed for typically 1-3, but supports more).
 class Child {
   final String id;
   final String name;
 
-  /// Bruges til at vise børnene i en stabil, brugervalgt rækkefølge (fx
-  /// oprettelsesrækkefølge som default) frem for alfabetisk/tilfældig.
+  /// Used to show the children in a stable, user-chosen order (e.g. creation
+  /// order by default) rather than alphabetical/random.
   final int sortOrder;
   final DateTime createdAt;
 
@@ -51,8 +49,8 @@ class Child {
     );
   }
 
-  /// JSON-form brugt over sync-protokollen (camelCase-nøgler), adskilt
-  /// fra [toMap]/[fromMap] der bruger databasens snake_case kolonnenavne.
+  /// JSON form used over the sync protocol (camelCase keys), separate from
+  /// [toMap]/[fromMap] which use the database's snake_case column names.
   Map<String, Object?> toJson() {
     return {
       'id': id,

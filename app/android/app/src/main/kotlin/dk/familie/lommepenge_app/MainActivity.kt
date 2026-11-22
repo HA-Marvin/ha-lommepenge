@@ -18,14 +18,16 @@ import java.io.File
 import kotlin.concurrent.thread
 
 /**
- * Appens lille bro til Android (kanal "lommepenge/native"):
+ * The app's small bridge to Android (channel "lommepenge/native"):
  *
- * - links fra Home Assistants installationsside (`lommepenge://pair?...`)
- * - søgning efter Home Assistant på hjemmenettet (se [HaDiscovery])
- * - appens egen version, så den kan sammenlignes med HA's nyeste
- * - installation af en opdatering hentet fra HA (PackageInstaller - på
- *   Android 12+ uden ekstra tryk, når appen selv installerede sidste version)
- * - en notifikation når der er en ny version
+ * - links from Home Assistant's install page (`lommepenge://pair?...`)
+ * - search for Home Assistant on the home network (see [HaDiscovery])
+ * - the app's own version, so it can be compared with HA's latest
+ * - installation of an update fetched from HA (PackageInstaller - on
+ *   Android 12+ without an extra tap when the app installed the last version
+ *   itself)
+ * - a notification when there is a new version (texts in the app's language
+ *   come from Flutter)
  */
 class MainActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
@@ -68,7 +70,11 @@ class MainActivity : FlutterActivity() {
                     }
                     "discoverHa" -> HaDiscovery(this@MainActivity) { result.success(it) }.start()
                     "notify" -> {
-                        notifyUpdate(call.argument<String>("title")!!, call.argument<String>("text")!!)
+                        notifyUpdate(
+                            call.argument<String>("title")!!,
+                            call.argument<String>("text")!!,
+                            call.argument<String>("channelName") ?: "Updates",
+                        )
                         result.success(null)
                     }
                     else -> result.notImplemented()
@@ -134,7 +140,7 @@ class MainActivity : FlutterActivity() {
                 }
                 confirm?.let { startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
-            PackageInstaller.STATUS_SUCCESS -> Unit // appen genstartes af Android
+            PackageInstaller.STATUS_SUCCESS -> Unit // the app is restarted by Android
             else -> channel?.invokeMethod(
                 "installFailed",
                 intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE),
@@ -142,7 +148,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun notifyUpdate(title: String, text: String) {
+    private fun notifyUpdate(title: String, text: String, channelName: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -152,7 +158,7 @@ class MainActivity : FlutterActivity() {
         val manager = getSystemService(NotificationManager::class.java)
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(
-                NotificationChannel(UPDATE_CHANNEL, "Opdateringer", NotificationManager.IMPORTANCE_DEFAULT)
+                NotificationChannel(UPDATE_CHANNEL, channelName, NotificationManager.IMPORTANCE_DEFAULT)
             )
             Notification.Builder(this, UPDATE_CHANNEL)
         } else {

@@ -6,16 +6,21 @@
         "description": "Home Assistant stores the family's tasks and pocket money. The app on the family screen, the parents' phones and the children's tablets connects here.",
         "data": {
           "family_name": "Family name",
-          "pin": "Parent PIN (4-8 digits)"
+          "pin": "Parent PIN (4-8 digits)",
+          "language": "Language",
+          "currency": "Currency"
         },
         "data_description": {
-          "pin": "Unlocks the parent part of the app on the family screen and the parents' phones."
+          "pin": "Unlocks the parent part of the app on the family screen and the parents' phones.",
+          "language": "Language of entity names, restriction reasons, notifications and the install page - independent of Home Assistant's language. Each device chooses its own language in the app.",
+          "currency": "Written as you want it shown, e.g. DKK, kr, € or USD."
         }
       }
     },
     "error": {
       "name_required": "Enter a name.",
-      "invalid_pin": "The PIN must be 4-8 digits."
+      "invalid_pin": "The PIN must be 4-8 digits.",
+      "invalid_currency": "Enter a currency (at most 10 characters)."
     },
     "abort": {
       "single_instance_allowed": "Lommepenge is already set up."
@@ -27,16 +32,23 @@
         "title": "Lommepenge settings",
         "description": "Home Assistant fetches the app from the releases of this repository and hands new versions to the family's devices. A token is only needed for a private repository.",
         "data": {
+          "language": "Language",
+          "currency": "Currency",
           "github_token": "GitHub token (only for a private repository)",
           "github_repo": "Repository with the app releases",
           "pin": "New parent PIN (leave empty to keep)"
+        },
+        "data_description": {
+          "language": "Language of entity names, restriction reasons, notifications and the install page - independent of Home Assistant's language.",
+          "currency": "Written as you want it shown, e.g. DKK, kr, € or USD."
         }
       }
     },
     "error": {
       "invalid_token": "GitHub rejected the token, or it has no access to the repository.",
       "cannot_connect": "Could not reach GitHub.",
-      "invalid_pin": "The PIN must be 4-8 digits."
+      "invalid_pin": "The PIN must be 4-8 digits.",
+      "invalid_currency": "Enter a currency (at most 10 characters)."
     }
   },
   "config_subentries": {
@@ -86,6 +98,15 @@
         "screen": "Family screen (all children)",
         "parent": "Parent's phone",
         "child": "Child's tablet (one child)"
+      }
+    },
+    "language": {
+      "options": {
+        "en": "English",
+        "da": "Dansk",
+        "de": "Deutsch",
+        "es": "Español",
+        "fr": "Français"
       }
     }
   },
@@ -146,6 +167,11 @@
       "app": {
         "name": "App"
       }
+    }
+  },
+  "exceptions": {
+    "not_set_up": {
+      "message": "Lommepenge is not set up."
     }
   },
   "services": {

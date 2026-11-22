@@ -1,15 +1,14 @@
-/// En manuel, signeret (+/-) justering af saldoen, oprettet af en
-/// forælder - fx for at rette en forkert saldo efter en geninstallation
-/// der nulstillede den. [amountOre] kan være negativ. [note] er en
-/// obligatorisk begrundelse, så justeringen altid kan forklares i
-/// historikken.
+/// A manual, signed (+/-) adjustment of the balance, created by a parent -
+/// e.g. to correct a wrong balance after a reinstall that reset it.
+/// [amountOre] can be negative. [note] is a mandatory reason, so the
+/// adjustment can always be explained in the history.
 class BalanceAdjustment {
   final String id;
   final int amountOre;
   final String note;
 
-  /// Hvilket barn justeringen gælder for - hvert barn har sin egen
-  /// saldo, se `TaskRepository.currentBalanceOre`.
+  /// Which child the adjustment applies to - every child has its own
+  /// balance, see `TaskRepository.currentBalanceOre`.
   final String childId;
   final DateTime createdAt;
 
@@ -36,15 +35,15 @@ class BalanceAdjustment {
       id: map['id'] as String,
       amountOre: map['amount_ore'] as int,
       note: map['note'] as String,
-      // Defensivt fallback til '' hvis en gammel række alligevel mangler
-      // værdien - se samme kommentar i Completion.fromMap.
+      // Defensive fallback to '' if an old row still lacks the value - see
+      // the same comment in Completion.fromMap.
       childId: map['child_id'] as String? ?? '',
       createdAt: DateTime.parse(map['created_at'] as String),
     );
   }
 
-  /// JSON-form brugt over sync-protokollen (camelCase-nøgler), adskilt
-  /// fra [toMap]/[fromMap] der bruger databasens snake_case kolonnenavne.
+  /// JSON form used over the sync protocol (camelCase keys), separate from
+  /// [toMap]/[fromMap] which use the database's snake_case column names.
   Map<String, Object?> toJson() {
     return {
       'id': id,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/l10n.dart';
 import '../models/child.dart';
 import '../providers/app_state.dart';
 import '../widgets/child_task_list.dart';
@@ -8,12 +9,13 @@ import '../widgets/sync_indicator.dart';
 import '../widgets/update_banner.dart';
 import 'child_home_screen.dart';
 
-/// Køleskabsskærmens visning: alle børn samlet, med én kolonne pr. barn
-/// (navn, saldo, ugens fremskridt og barnets egne opgaver), så hvert barn
-/// hurtigt kan finde sin egen del. Forælder-tilstand åbnes med låsen.
+/// The family screen's view: all children together, with one column per
+/// child (name, balance, the week's progress and the child's own tasks), so
+/// each child can quickly find their own part. Parent mode is opened with the
+/// lock.
 ///
-/// Er skærmen for smal til at alle kolonner kan være der (fx en tablet på
-/// højkant), scroller kolonnerne vandret i stedet for at klemmes.
+/// If the screen is too narrow for all columns (e.g. a tablet in portrait),
+/// the columns scroll horizontally instead of being squeezed.
 class ScreenOverviewScreen extends StatelessWidget {
   const ScreenOverviewScreen({super.key});
 
@@ -31,7 +33,7 @@ class ScreenOverviewScreen extends StatelessWidget {
           SyncIndicator(appState: appState),
           IconButton(
             icon: const Icon(Icons.lock_outline),
-            tooltip: 'Forælder-tilstand',
+            tooltip: context.l10n.parentMode,
             onPressed: () => openParentMode(context),
           ),
         ],
@@ -39,19 +41,19 @@ class ScreenOverviewScreen extends StatelessWidget {
       body: Column(
         children: [
           UpdateBanner(appState: appState),
-          Expanded(child: _body(appState, children)),
+          Expanded(child: _body(context, appState, children)),
         ],
       ),
     );
   }
 
-  Widget _body(AppState appState, List<Child> children) {
+  Widget _body(BuildContext context, AppState appState, List<Child> children) {
     return children.isEmpty
-          ? const Center(
+          ? Center(
               child: Padding(
-                padding: EdgeInsets.all(32),
+                padding: const EdgeInsets.all(32),
                 child: Text(
-                  'Der er ingen børn endnu. Opret dem i forælder-tilstand.',
+                  context.l10n.noChildrenCreateInParentMode,
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -111,9 +113,9 @@ class _ChildColumn extends StatelessWidget {
             settings: appState.familySettings,
           ),
           if (tasks.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: Text('Ingen opgaver.', textAlign: TextAlign.center),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(context.l10n.noTasks, textAlign: TextAlign.center),
             )
           else
             for (final task in tasks)

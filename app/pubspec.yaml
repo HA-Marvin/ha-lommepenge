@@ -1,7 +1,7 @@
 name: lommepenge_app
-description: "Lommepenge-app til familien - opgaver og godkendelse med Home Assistant som server."
+description: "Lommepenge app for the family - tasks and approval with Home Assistant as the server."
 publish_to: 'none'
-version: 0.3.2+302
+version: 0.4.0+400
 
 environment:
   sdk: '>=3.5.0 <4.0.0'
@@ -10,33 +10,37 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Translations (English, Danish, German, Spanish, French) - see l10n.yaml
+  flutter_localizations:
+    sdk: flutter
+  intl: any
 
   # UI
   cupertino_icons: ^1.0.8
 
-  # State management (holdt simpelt: ChangeNotifier + provider)
+  # State management (kept simple: ChangeNotifier + provider)
   provider: ^6.1.2
 
-  # Lokal database
+  # Local database
   sqflite: ^2.3.3+1
   path_provider: ^2.1.4
   path: ^1.9.0
-  # Ren Dart/FFI-implementering af sqflite til Windows/Linux desktop, hvor
-  # den almindelige sqflite-plugin ikke har nogen native implementering
-  # (se DatabaseHelper.initializeFactory). Var tidligere kun en
-  # dev_dependency til tests, men skal nu også med i selve app-builden.
+  # Pure Dart/FFI implementation of sqflite for Windows/Linux desktop, where
+  # the regular sqflite plugin has no native implementation (see
+  # DatabaseHelper.initializeFactory). Used to be a dev_dependency for tests
+  # only, but is now needed in the app build itself.
   sqflite_common_ffi: ^2.3.4
 
-  # Lokale indstillinger (rolle, pin-hash, forbindelse til Home Assistant)
+  # Local settings (role, PIN hash, connection to Home Assistant, language)
   shared_preferences: ^2.3.2
 
-  # Id-generering
+  # Id generation
   uuid: ^4.5.1
 
-  # Signering af kald til Home Assistant (HMAC-SHA256) og tjek af opdateringer
+  # Signing of requests to Home Assistant (HMAC-SHA256) and update checks
   crypto: ^3.0.5
 
-  # Scanning af QR-koden fra "Tilføj enhed" i Home Assistant
+  # Scanning the QR code from "Add device" in Home Assistant
   mobile_scanner: ^5.2.3
 
 dev_dependencies:
@@ -46,3 +50,4 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true

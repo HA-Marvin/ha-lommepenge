@@ -1,47 +1,82 @@
 blueprint:
-  name: Lommepenge – spær tablet ved forsinket opgave
+  name: Lommepenge – restrict tablet on overdue task
   description: >
-    Tænder en kontakt (fx en UniFi-trafikregel der blokerer YouTube/spil
-    for barnets tablet), mens barnet har en forsinket obligatorisk opgave,
-    og slukker den igen når opgaven er markeret udført. Er
-    lommepenge-skærmen utilgængelig i over 10 minutter, slukkes kontakten,
-    så en fejl aldrig straffer barnet. Lav én automation pr. barn.
+    Turns on a switch (e.g. a UniFi traffic rule that blocks YouTube/games
+    for the child's tablet) while the child has an overdue mandatory task,
+    and turns it off again when the task is marked as done. If Lommepenge is
+    unavailable for more than 10 minutes, the switch is turned off, so a
+    fault never punishes the child. Create one automation per child. The
+    reason in the notification comes from the integration in the language
+    chosen for it; the other texts can be changed below.
   domain: automation
-  source_url: https://raw.githubusercontent.com/HA-Marvin/ha-lommepenge/main/blueprints/automation/lommepenge/spaerring.yaml
+  source_url: https://raw.githubusercontent.com/HA-Marvin/ha-lommepenge/main/blueprints/automation/lommepenge/restriction.yaml
   input:
     restricted_sensor:
-      name: Barnets "Tablet spærret"-sensor
+      name: The child's "Tablet restricted" sensor
       selector:
         entity:
           filter:
             - integration: lommepenge
               domain: binary_sensor
     block_switch:
-      name: Kontakt der spærrer tabletten
+      name: Switch that restricts the tablet
       description: >
-        Til = spærret. Fx UniFi-integrationens kontakt for en trafikregel,
-        der blokerer underholdning for netop denne tablet.
+        On = restricted. E.g. the UniFi integration's switch for a traffic
+        rule that blocks entertainment for exactly this tablet.
       selector:
         entity:
           filter:
             - domain: switch
     notify_services:
-      name: Forældrenes notify-tjenester (valgfrit)
+      name: The parents' notify services (optional)
       description: >
-        Får besked når tabletten spærres, med knappen "Ophæv spærring i dag".
-        Én pr. linje, fx notify.mobile_app_pixel_8.
+        Notified when the tablet is restricted, with a button to lift the
+        restriction for today. One per line, e.g. notify.mobile_app_pixel_8.
       default: []
       selector:
         text:
           multiple: true
     parents:
-      name: Forældre der må ophæve spærringen (valgfrit)
+      name: Parents who may lift the restriction (optional)
       default: []
       selector:
         entity:
           filter:
             - domain: person
           multiple: true
+    texts:
+      name: Notification texts
+      description: "{{ child_name }} is replaced by the child's name."
+      collapsed: true
+      input:
+        restricted_title:
+          name: Title when the tablet is restricted
+          default: "{{ child_name }}'s tablet is restricted"
+          selector:
+            text:
+        fallback_reason:
+          name: Text when no reason is given
+          default: Overdue task
+          selector:
+            text:
+        suspend_label:
+          name: Label of the button that lifts the restriction
+          default: Lift restriction today
+          selector:
+            text:
+        unavailable_title:
+          name: Title when Lommepenge is not responding
+          default: Lommepenge is not responding
+          selector:
+            text:
+        unavailable_message:
+          name: Message when Lommepenge is not responding
+          default: >-
+            Lommepenge has been unavailable for 10 minutes, so {{ child_name }}'s
+            tablet has been unlocked.
+          selector:
+            text:
+              multiline: true
 
 mode: queued
 max: 10
@@ -53,35 +88,40 @@ variables:
   parent_user_ids: >
     {{ parents | map('state_attr', 'user_id') | select('string') | list }}
   child_id: "{{ state_attr(restricted_sensor, 'child_id') }}"
-  child_name: "{{ state_attr(restricted_sensor, 'child_name') or 'Barnet' }}"
-  tag: "lommepenge_spaerring_{{ child_id }}"
+  child_name: "{{ state_attr(restricted_sensor, 'child_name') or 'The child' }}"
+  tag: "lommepenge_restriction_{{ child_id }}"
+  restricted_title: !input restricted_title
+  fallback_reason: !input fallback_reason
+  suspend_label: !input suspend_label
+  unavailable_title: !input unavailable_title
+  unavailable_message: !input unavailable_message
 
 triggers:
   - trigger: state
     entity_id: !input restricted_sensor
     to: "on"
-    id: spaer
+    id: restrict
   - trigger: state
     entity_id: !input restricted_sensor
     to: "off"
-    id: ophaev
+    id: lift
   - trigger: state
     entity_id: !input restricted_sensor
     to: "unavailable"
     for: "00:10:00"
-    id: utilgaengelig
+    id: unavailable
   - trigger: homeassistant
     event: start
     id: start
   - trigger: event
     event_type: mobile_app_notification_action
-    id: knap
+    id: button
 
 actions:
   - choose:
       - conditions:
           - condition: trigger
-            id: spaer
+            id: restrict
         sequence:
           - action: switch.turn_on
             target:
@@ -92,17 +132,17 @@ actions:
                 - action: "{{ repeat.item }}"
                   continue_on_error: true
                   data:
-                    title: "{{ child_name }}s tablet er spærret"
-                    message: "{{ state_attr(restricted_sensor, 'reason') or 'Forsinket opgave' }}"
+                    title: "{{ restricted_title }}"
+                    message: "{{ state_attr(restricted_sensor, 'reason') or fallback_reason }}"
                     data:
                       tag: "{{ tag }}"
                       actions:
-                        - action: "LOMMEPENGE_OPHAEV_{{ child_id }}"
-                          title: Ophæv spærring i dag
+                        - action: "LOMMEPENGE_SUSPEND_{{ child_id }}"
+                          title: "{{ suspend_label }}"
 
       - conditions:
           - condition: trigger
-            id: ophaev
+            id: lift
         sequence:
           - action: switch.turn_off
             target:
@@ -119,9 +159,9 @@ actions:
 
       - conditions:
           - condition: trigger
-            id: utilgaengelig
+            id: unavailable
         sequence:
-          # Fail-open: en fejl i systemet må aldrig straffe barnet.
+          # Fail-open: a fault in the system must never punish the child.
           - action: switch.turn_off
             target:
               entity_id: !input block_switch
@@ -131,10 +171,8 @@ actions:
                 - action: "{{ repeat.item }}"
                   continue_on_error: true
                   data:
-                    title: Lommepenge svarer ikke
-                    message: >
-                      Køleskabsskærmen har ikke svaret i 10 minutter, så
-                      {{ child_name }}s tablet er låst op.
+                    title: "{{ unavailable_title }}"
+                    message: "{{ unavailable_message }}"
 
       - conditions:
           - condition: trigger
@@ -147,11 +185,11 @@ actions:
 
       - conditions:
           - condition: trigger
-            id: knap
+            id: button
           - condition: template
             value_template: >
               {{ child_id and trigger.event.data.action | default('')
-                 == 'LOMMEPENGE_OPHAEV_' ~ child_id }}
+                 == 'LOMMEPENGE_SUSPEND_' ~ child_id }}
           - condition: template
             value_template: "{{ trigger.event.context.user_id in parent_user_ids }}"
         sequence:

@@ -1,18 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Forbindelse til Home Assistant på hjemmenettet -->
+    <!-- Connection to Home Assistant on the home network -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- Scanning af QR-koden fra "Tilføj enhed" i Home Assistant -->
+    <!-- Scanning the QR code from "Add device" in Home Assistant -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
-    <!-- Appen installerer selv nye versioner hentet fra Home Assistant -->
+    <!-- The app installs new versions fetched from Home Assistant itself -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- allowBackup=false: en geninstallation skal give en helt tom app.
-         Ellers ville Androids auto-backup gendanne fx en barne-tablets
-         rolle og enhedsnøgle automatisk. -->
+    <!-- allowBackup=false: a reinstall must give a completely empty app.
+         Otherwise Android's auto backup would restore e.g. a child tablet's
+         role and device key automatically. -->
     <application
         android:label="Lommepenge"
         android:name="${applicationName}"
@@ -29,8 +29,8 @@
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
-            <!-- Links håndteres af appen selv (MainActivity), ikke af
-                 Flutters router. -->
+            <!-- Links are handled by the app itself (MainActivity), not by
+                 Flutter's router. -->
             <meta-data
                 android:name="flutter_deeplinking_enabled"
                 android:value="false" />
@@ -38,7 +38,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- "Åbn appen og forbind" på Home Assistants installationsside -->
+            <!-- "Open the app and connect" on Home Assistant's install page -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

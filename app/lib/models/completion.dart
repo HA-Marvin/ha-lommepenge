@@ -1,4 +1,4 @@
-/// Status for en udført opgave, indtil forælder har taget stilling.
+/// Status of a completed task, until a parent has decided.
 enum CompletionStatus {
   pending('pending'),
   approved('approved'),
@@ -15,18 +15,18 @@ enum CompletionStatus {
   }
 }
 
-/// En registrering af at et barn har markeret en opgave som udført.
+/// A record that a child has marked a task as done.
 ///
-/// [amountAtCompletionOre] er en kopi af opgavens beløb på
-/// udførelsestidspunktet, så en senere prisændring på opgaven ikke
-/// ændrer historikken.
+/// [amountAtCompletionOre] is a copy of the task's amount at the time of
+/// completion, so a later price change on the task does not change the
+/// history.
 class Completion {
   final String id;
   final String taskId;
 
-  /// Hvilket barn der har udført/optjener denne completion. Ved en
-  /// opgave tildelt flere børn optjener hvert barn sin egen completion
-  /// for samme opgave, helt uafhængigt af de andre - se
+  /// Which child did/earns this completion. For a task assigned to several
+  /// children each child earns its own completion for the same task,
+  /// completely independently of the others - see
   /// `TaskRepository.completeTask`.
   final String childId;
   final DateTime completedAt;
@@ -34,10 +34,10 @@ class Completion {
   final DateTime? approvedAt;
   final int amountAtCompletionOre;
 
-  /// Om opgaven blev markeret udført efter sin frist (kun obligatoriske
-  /// opgaver). Beregnes ved udførelsen og gemmes, så en senere ændring af
-  /// fristen ikke ændrer historikken. Udløser pausetiden før tabletten
-  /// låses op (se `logic/follow_up.dart`) og vises ved godkendelse.
+  /// Whether the task was marked as done after its deadline (mandatory tasks
+  /// only). Calculated at completion and stored, so a later change of the
+  /// deadline does not change the history. Triggers the pause before the
+  /// tablet is unlocked (see `logic/follow_up.dart`) and is shown on approval.
   final bool late;
 
   const Completion({
@@ -85,10 +85,10 @@ class Completion {
     return Completion(
       id: map['id'] as String,
       taskId: map['task_id'] as String,
-      // Defensivt fallback til '' hvis en gammel række alligevel mangler
-      // værdien - bør ikke ske, da DatabaseHelper-migrationen backfiller
-      // alle gamle rækker med et standard-barn, men appen må under ingen
-      // omstændigheder crashe på en uventet gammel/korrupt række.
+      // Defensive fallback to '' if an old row still lacks the value - should
+      // not happen, as the DatabaseHelper migration backfills all old rows
+      // with a default child, but the app must never crash on an unexpected
+      // old/corrupt row.
       childId: map['child_id'] as String? ?? '',
       completedAt: DateTime.parse(map['completed_at'] as String),
       status: CompletionStatus.fromValue(map['status'] as String),
@@ -100,8 +100,8 @@ class Completion {
     );
   }
 
-  /// JSON-form brugt over sync-protokollen (camelCase-nøgler), adskilt
-  /// fra [toMap]/[fromMap] der bruger databasens snake_case kolonnenavne.
+  /// JSON form used over the sync protocol (camelCase keys), separate from
+  /// [toMap]/[fromMap] which use the database's snake_case column names.
   Map<String, Object?> toJson() {
     return {
       'id': id,
@@ -119,7 +119,7 @@ class Completion {
     return Completion(
       id: json['id'] as String,
       taskId: json['taskId'] as String,
-      // Samme defensive fallback som fromMap - se kommentaren der.
+      // The same defensive fallback as fromMap - see the comment there.
       childId: json['childId'] as String? ?? '',
       completedAt: DateTime.parse(json['completedAt'] as String),
       status: CompletionStatus.fromValue(json['status'] as String),

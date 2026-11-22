@@ -2,10 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../l10n/l10n.dart';
 import 'crypto_service.dart';
 
-/// Forbindelsen til Home Assistant, gemt efter parring. [key] er enhedens
-/// egen nøgle fra HA - appen kender aldrig HA's egne brugere/tokens.
+/// The connection to Home Assistant, stored after pairing. [key] is the
+/// device's own key from HA - the app never knows HA's own users/tokens.
 class HaConnection {
   final Uri baseUrl;
   final String deviceId;
@@ -18,18 +19,18 @@ class HaConnection {
   });
 }
 
-/// Et parringslink fra "Tilføj enhed" i HA: hvor HA er, og engangskoden.
+/// A pairing link from "Add device" in HA: where HA is, and the one-time code.
 class ConnectLink {
   final Uri baseUrl;
   final String token;
   const ConnectLink(this.baseUrl, this.token);
 }
 
-/// Læser et link fra QR-koden eller installationssiden:
+/// Reads a link from the QR code or the install page:
 ///
-/// - `http://192.168.1.10:8123/api/lommepenge/install/<token>` (QR-koden)
+/// - `http://192.168.1.10:8123/api/lommepenge/install/<token>` (the QR code)
 /// - `lommepenge://pair?url=http://192.168.1.10:8123&token=<token>`
-///   ("Åbn appen og forbind" på installationssiden)
+///   ("Open the app and connect" on the install page)
 ConnectLink? parseConnectLink(String text) {
   final uri = Uri.tryParse(text.trim());
   if (uri == null) return null;
@@ -57,9 +58,9 @@ ConnectLink? parseConnectLink(String text) {
   return null;
 }
 
-/// Parring med en kode tastet i hånden (enhed uden kamera): HA's adresse,
-/// fx `192.168.1.10` eller `http://homeassistant.local:8123`, og koden fra
-/// "Tilføj enhed". Mangler skema eller port, bruges `http` og 8123.
+/// Pairing with a code typed by hand (device without a camera): HA's address,
+/// e.g. `192.168.1.10` or `http://homeassistant.local:8123`, and the code from
+/// "Add device". If the scheme or port is missing, `http` and 8123 are used.
 ConnectLink? connectLinkFromCode(String address, String code) {
   var text = address.trim();
   if (text.isEmpty) return null;
@@ -70,13 +71,13 @@ ConnectLink? connectLinkFromCode(String address, String code) {
   final base = Uri(
     scheme: uri.scheme,
     host: uri.host,
-    // Uri skjuler standardporte (fx :443), så se efter en port i teksten.
+    // Uri hides default ports (e.g. :443), so look for a port in the text.
     port: RegExp(r'://[^/]+:\d+').hasMatch(text) ? uri.port : 8123,
   );
   return ConnectLink(base, normalizedCode);
 }
 
-/// Svar fra parringen.
+/// Response from pairing.
 class PairResult {
   final String? deviceId;
   final String? deviceKey;
@@ -106,15 +107,15 @@ class PairResult {
   bool get success => errorMessage == null;
 }
 
-/// Svar fra et signeret kald.
+/// Response from a signed request.
 class HaResult {
   final Map<String, dynamic>? state;
   final String? errorMessage;
 
-  /// HA kender ikke længere enheden (fjernet under "Enheder" i HA).
+  /// HA no longer knows the device (removed under "Devices" in HA).
   final bool unauthorized;
 
-  /// HA kunne ikke nås - handlingen kan sendes igen senere.
+  /// HA could not be reached - the action can be sent again later.
   final bool offline;
 
   const HaResult.ok(this.state)
@@ -131,19 +132,26 @@ class HaResult {
   bool get success => errorMessage == null;
 }
 
-/// Appens klient til Lommepenge-integrationen i Home Assistant.
+/// The app's client for the Lommepenge integration in Home Assistant.
 ///
-/// Alle kald efter parringen signeres med enhedens nøgle over tidspunkt,
-/// metode, sti og krop (HMAC-SHA256), så HA ved hvilken enhed - og dermed
-/// hvilken rolle - der spørger.
+/// All requests after pairing are signed with the device's key over
+/// timestamp, method, path and body (HMAC-SHA256), so HA knows which device -
+/// and thereby which role - is asking. Every request carries the language
+/// chosen in the app (`X-Lommepenge-Language`), so HA's error messages come
+/// back in it - never the phone's language.
 class HaClient {
   static const apiPrefix = '/api/lommepenge';
+  static const languageHeader = 'X-Lommepenge-Language';
 
   final Duration timeout;
 
-  /// Appens version (sendes med, så HA kan vise den pr. enhed).
+  /// The app's version (sent along, so HA can show it per device).
   String appVersion = '';
   int appVersionCode = 0;
+
+  /// The texts for the app's own error messages; set by `AppState` when the
+  /// language changes.
+  AppLocalizations l10n = l10nFor(defaultLanguage);
 
   HaClient({this.timeout = const Duration(seconds: 8)});
 
@@ -154,6 +162,7 @@ class HaClient {
           .postUrl(link.baseUrl.replace(path: '$apiPrefix/pair'))
           .timeout(timeout);
       request.headers.contentType = ContentType.json;
+      request.headers.set(languageHeader, l10n.localeName);
       request.add(utf8.encode(jsonEncode({
         'token': link.token,
         'appVersion': appVersion,
@@ -164,7 +173,7 @@ class HaClient {
       if (response.statusCode != 200) {
         return PairResult.failure(
           body['error'] as String? ??
-              'Home Assistant afviste forbindelsen (${response.statusCode}).',
+              l10n.haRejectedConnection('${response.statusCode}'),
         );
       }
       return PairResult.ok(
@@ -176,13 +185,11 @@ class HaClient {
         familyName: body['familyName'] as String?,
       );
     } on SocketException {
-      return const PairResult.failure(
-        'Kan ikke nå Home Assistant. Er enheden på hjemmenettet?',
-      );
+      return PairResult.failure(l10n.cannotReachHaHomeNetwork);
     } on TimeoutException {
-      return const PairResult.failure('Home Assistant svarede ikke i tide.');
+      return PairResult.failure(l10n.haTimeout);
     } catch (e) {
-      return PairResult.failure('Uventet fejl: $e');
+      return PairResult.failure(l10n.unexpectedError('$e'));
     } finally {
       client.close(force: true);
     }
@@ -202,7 +209,7 @@ class HaClient {
         utf8.encode(jsonEncode(action)),
       );
 
-  /// Signatur-headere for et kald - samme beregning som HA's `sign()`.
+  /// Signature headers for a request - the same calculation as HA's `sign()`.
   Map<String, String> signedHeaders(
     HaConnection connection,
     String method,
@@ -222,11 +229,12 @@ class HaClient {
       'X-Signature': CryptoService.hmacSha256Hex(connection.key, message),
       'X-App-Version': appVersion,
       'X-App-Version-Code': '$appVersionCode',
+      languageHeader: l10n.localeName,
     };
   }
 
-  /// Henter den nyeste APK fra HA til [target]. Returnerer en fejlbesked,
-  /// eller `null` når filen er hentet.
+  /// Downloads the latest APK from HA to [target]. Returns an error message,
+  /// or `null` when the file has been downloaded.
   Future<String?> downloadApk(
     HaConnection connection,
     File target, {
@@ -243,8 +251,7 @@ class HaClient {
       final response = await request.close().timeout(timeout);
       if (response.statusCode != 200) {
         await response.drain<void>();
-        return 'Home Assistant kunne ikke levere opdateringen '
-            '(${response.statusCode}).';
+        return l10n.haUpdateFailed('${response.statusCode}');
       }
       final total = response.contentLength > 0 ? response.contentLength : null;
       final sink = target.openWrite();
@@ -257,11 +264,11 @@ class HaClient {
       await sink.close();
       return null;
     } on SocketException {
-      return 'Kan ikke nå Home Assistant.';
+      return l10n.cannotReachHa;
     } on TimeoutException {
-      return 'Home Assistant svarede ikke i tide.';
+      return l10n.haTimeout;
     } catch (e) {
-      return 'Kunne ikke hente opdateringen: $e';
+      return l10n.updateDownloadFailed('$e');
     } finally {
       client.close(force: true);
     }
@@ -286,31 +293,22 @@ class HaClient {
       final decoded = await _decode(response);
       if (response.statusCode == 401) {
         return HaResult.failure(
-          decoded['error'] as String? ??
-              'Enheden er ikke længere forbundet til Home Assistant.',
+          decoded['error'] as String? ?? l10n.deviceNoLongerConnected,
           unauthorized: true,
         );
       }
       if (response.statusCode != 200) {
         return HaResult.failure(
-          decoded['error'] as String? ??
-              'Home Assistant svarede med fejl (${response.statusCode}).',
+          decoded['error'] as String? ?? l10n.haError('${response.statusCode}'),
         );
       }
       return HaResult.ok(decoded);
     } on SocketException {
-      return const HaResult.failure(
-        'Ingen forbindelse til Home Assistant. Tjek at enheden er på '
-        'hjemmenettet.',
-        offline: true,
-      );
+      return HaResult.failure(l10n.noConnectionCheckNetwork, offline: true);
     } on TimeoutException {
-      return const HaResult.failure(
-        'Home Assistant svarede ikke i tide. Prøver igen senere.',
-        offline: true,
-      );
+      return HaResult.failure(l10n.haTimeoutRetry, offline: true);
     } catch (e) {
-      return HaResult.failure('Uventet fejl: $e');
+      return HaResult.failure(l10n.unexpectedError('$e'));
     } finally {
       client.close(force: true);
     }

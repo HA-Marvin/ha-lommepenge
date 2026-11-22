@@ -6,16 +6,21 @@
         "description": "Home Assistant gemmer familiens opgaver og lommepenge. Appen på den fælles skærm, forældrenes telefoner og børnenes tablets forbinder hertil.",
         "data": {
           "family_name": "Familiens navn",
-          "pin": "Forælder-PIN (4-8 cifre)"
+          "pin": "Forælder-PIN (4-8 cifre)",
+          "language": "Sprog",
+          "currency": "Valuta"
         },
         "data_description": {
-          "pin": "Låser forælder-delen op i appen på den fælles skærm og forældrenes telefoner."
+          "pin": "Låser forælder-delen op i appen på den fælles skærm og forældrenes telefoner.",
+          "language": "Sprog for entiteternes navne, årsager til spærring, notifikationer og installationssiden - uafhængigt af Home Assistants sprog. Hver enhed vælger sit eget sprog i appen.",
+          "currency": "Skrives som den skal vises, fx DKK, kr, € eller USD."
         }
       }
     },
     "error": {
       "name_required": "Skriv et navn.",
-      "invalid_pin": "PIN-koden skal være 4-8 cifre."
+      "invalid_pin": "PIN-koden skal være 4-8 cifre.",
+      "invalid_currency": "Skriv en valuta (højst 10 tegn)."
     },
     "abort": {
       "single_instance_allowed": "Lommepenge er allerede sat op."
@@ -27,16 +32,23 @@
         "title": "Lommepenge-indstillinger",
         "description": "Home Assistant henter appen fra dette repos releases og giver nye versioner videre til familiens enheder. En nøgle skal kun bruges til et privat repo.",
         "data": {
+          "language": "Sprog",
+          "currency": "Valuta",
           "github_token": "GitHub-nøgle (kun til et privat repo)",
           "github_repo": "Repo med appens releases",
           "pin": "Ny forælder-PIN (tom = behold)"
+        },
+        "data_description": {
+          "language": "Sprog for entiteternes navne, årsager til spærring, notifikationer og installationssiden - uafhængigt af Home Assistants sprog.",
+          "currency": "Skrives som den skal vises, fx DKK, kr, € eller USD."
         }
       }
     },
     "error": {
       "invalid_token": "GitHub afviste nøglen, eller den har ikke adgang til repoet.",
       "cannot_connect": "Kunne ikke nå GitHub.",
-      "invalid_pin": "PIN-koden skal være 4-8 cifre."
+      "invalid_pin": "PIN-koden skal være 4-8 cifre.",
+      "invalid_currency": "Skriv en valuta (højst 10 tegn)."
     }
   },
   "config_subentries": {
@@ -86,6 +98,15 @@
         "screen": "Fælles skærm (alle børn)",
         "parent": "Forælders telefon",
         "child": "Barnets tablet (ét barn)"
+      }
+    },
+    "language": {
+      "options": {
+        "en": "English",
+        "da": "Dansk",
+        "de": "Deutsch",
+        "es": "Español",
+        "fr": "Français"
       }
     }
   },
@@ -146,6 +167,11 @@
       "app": {
         "name": "App"
       }
+    }
+  },
+  "exceptions": {
+    "not_set_up": {
+      "message": "Lommepenge er ikke sat op."
     }
   },
   "services": {

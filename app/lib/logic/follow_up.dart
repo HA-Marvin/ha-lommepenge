@@ -1,15 +1,15 @@
+import '../l10n/l10n.dart';
 import '../models/completion.dart';
 import '../models/family_settings.dart';
 import '../models/task.dart';
 import 'recurrence.dart';
 
-// Opfølgning på obligatoriske opgaver: hvad mangler et barn i dag, hvad
-// er forsinket, og er barnets tablet spærret lige nu?
+// Follow-up on mandatory tasks: what is a child missing today, what is
+// overdue, and is the child's tablet restricted right now?
 //
-// Rene funktioner uden I/O, så reglerne kan testes og bruges ens af
-// køleskabsskærmen (UI + Home Assistant-API'et) og af tabletten (besked
-// til barnet). Reglerne er beskrevet i docs/lommepenge-integration.md,
-// Del E og G.
+// Pure functions without I/O, so the rules can be tested and used the same
+// way by the family screen and the tablet (message to the child). Home
+// Assistant calculates the same in the integration's `logic.py`.
 
 DateTime _atTime(DateTime day, String hhmm) {
   final minutes = minutesOfDay(hhmm) ?? 0;
@@ -19,14 +19,14 @@ DateTime _atTime(DateTime day, String hhmm) {
 bool _sameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
-/// Fristen for [task] på dagen [day], eller `null` hvis opgaven ikke
-/// følges op (kun obligatoriske opgaver har en frist).
+/// The deadline for [task] on the day [day], or `null` if the task is not
+/// followed up (only mandatory tasks have a deadline).
 DateTime? effectiveDue(Task task, FamilySettings settings, DateTime day) {
   if (!task.mandatory) return null;
   return _atTime(day, task.dueTime ?? settings.defaultDueTime);
 }
 
-/// Om en udførelse af [task] på tidspunktet [completedAt] er for sent.
+/// Whether a completion of [task] at [completedAt] is late.
 bool isLateCompletion(
   Task task,
   FamilySettings settings,
@@ -36,8 +36,8 @@ bool isLateCompletion(
   return due != null && completedAt.isAfter(due);
 }
 
-/// Om [now] ligger i spærre-vinduet. Et vindue der går over midnat (fx
-/// 22:00-02:00) understøttes.
+/// Whether [now] is in the restriction window. A window across midnight (e.g.
+/// 22:00-02:00) is supported.
 bool isInRestrictionWindow(FamilySettings settings, DateTime now) {
   final start = minutesOfDay(settings.restrictionStart) ?? 0;
   final end = minutesOfDay(settings.restrictionEnd) ?? 0;
@@ -47,7 +47,7 @@ bool isInRestrictionWindow(FamilySettings settings, DateTime now) {
   return current >= start || current < end;
 }
 
-/// Én obligatorisk opgave som barnet skal nå i dag.
+/// One mandatory task the child has to do today.
 class DueTask {
   final Task task;
   final DateTime due;
@@ -56,22 +56,22 @@ class DueTask {
   String get dueLabel => normalizeTimeOfDay('${due.hour}:${due.minute}')!;
 }
 
-/// Opfølgnings-status for ét barn på et givet tidspunkt.
+/// Follow-up status for one child at a given time.
 class ChildFollowUp {
   final String childId;
 
-  /// Obligatoriske opgaver i dag, endnu ikke udført, frist ikke passeret.
+  /// Mandatory tasks today, not done yet, deadline not passed.
   final List<DueTask> dueToday;
 
-  /// Obligatoriske opgaver i dag, endnu ikke udført, frist passeret.
+  /// Mandatory tasks today, not done yet, deadline passed.
   final List<DueTask> overdue;
 
-  /// Sat mens pausetiden efter en for sent udført opgave løber.
+  /// Set while the pause after a late completion is running.
   final DateTime? latePauseUntil;
 
   final bool inWindow;
 
-  /// En forælder har ophævet spærringen for i dag.
+  /// A parent has lifted the restriction for today.
   final bool suspended;
 
   const ChildFollowUp({
@@ -83,36 +83,35 @@ class ChildFollowUp {
     required this.suspended,
   });
 
-  /// Om barnets tablet skal være spærret lige nu.
+  /// Whether the child's tablet should be restricted right now.
   bool get restricted =>
       inWindow && !suspended && (overdue.isNotEmpty || latePauseUntil != null);
 
-  /// Kort forklaring til barnet/forældrene, eller `null` hvis ikke spærret.
-  String? get reason {
+  /// A short explanation for the child/parents, or `null` if not restricted.
+  String? reason(AppLocalizations l10n) {
     if (!restricted) return null;
     if (overdue.isNotEmpty) {
       final names = overdue
-          .map((d) => '${d.task.title} (frist ${d.dueLabel})')
+          .map((d) => l10n.reasonOverdueTask(d.task.title, d.dueLabel))
           .join(', ');
-      return 'Mangler: $names';
+      return l10n.reasonOverdue(names);
     }
     final until = latePauseUntil!;
-    return 'Opgaven er udført for sent - låses op kl. '
-        '${normalizeTimeOfDay('${until.hour}:${until.minute}')}';
+    return l10n.reasonLate(normalizeTimeOfDay('${until.hour}:${until.minute}')!);
   }
 
-  /// Den tidligste frist i dag der endnu ikke er nået (til advarsler).
+  /// The earliest deadline today that has not been reached yet (for warnings).
   DueTask? get nextDue {
     if (dueToday.isEmpty) return null;
     return dueToday.reduce((a, b) => a.due.isBefore(b.due) ? a : b);
   }
 }
 
-/// Beregner [ChildFollowUp] for ét barn.
+/// Calculates [ChildFollowUp] for one child.
 ///
-/// [tasks] er de aktive opgaver der gælder for barnet, og [completions]
-/// barnets egne completions (alle opgaver). [suspendedOn] er datoen
-/// (`YYYY-MM-DD`) for en evt. forælder-ophævelse.
+/// [tasks] are the active tasks that apply to the child, and [completions]
+/// the child's own completions (all tasks). [suspendedOn] is the date
+/// (`YYYY-MM-DD`) of a parent's suspension, if any.
 ChildFollowUp computeFollowUp({
   required String childId,
   required List<Task> tasks,
@@ -131,10 +130,10 @@ ChildFollowUp computeFollowUp({
     final forTask = completions.where((c) => c.taskId == task.id).toList();
     if (computeAvailability(task, forTask, now: now) !=
         TaskAvailability.available) {
-      continue; // venter på godkendelse, allerede gjort, eller ikke i dag
+      continue; // awaiting approval, already done, or not today
     }
-    // 'unlimited'-opgaver er altid "available" - en godkendt udførelse i
-    // dag tæller alligevel som at dagens pligt er gjort.
+    // 'unlimited' tasks are always "available" - an approved completion
+    // today still counts as today's duty being done.
     final approvedToday = forTask.any((c) =>
         c.status == CompletionStatus.approved && _sameDay(c.completedAt, now));
     if (approvedToday) continue;
@@ -164,7 +163,7 @@ ChildFollowUp computeFollowUp({
   );
 }
 
-/// `YYYY-MM-DD` for [d] (lokal tid).
+/// `YYYY-MM-DD` for [d] (local time).
 String dateKey(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-'
     '${d.month.toString().padLeft(2, '0')}-'

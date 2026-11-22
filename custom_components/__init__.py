@@ -1,1 +1,1 @@
-"""Gør custom_components importérbar i tests. Kopieres ikke til HA."""
+"""Makes custom_components importable in tests. Not copied to HA."""

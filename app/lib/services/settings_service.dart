@@ -5,23 +5,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/family_settings.dart';
 import 'ha_client.dart';
 
-/// Enhedens rolle i familien. Bestemmes i Home Assistant, når enheden
-/// tilføjes ("Tilføj enhed"), og kan ikke ændres på enheden selv.
+/// The currency until Home Assistant has said otherwise.
+const defaultCurrency = 'DKK';
+
+/// The device's role in the family. Decided in Home Assistant when the device
+/// is added ("Add device"), and cannot be changed on the device itself.
 enum DeviceRole {
-  /// Den fælles skærm (fx på køleskabet): alle børn samlet, forælder-delen
-  /// låst med PIN.
+  /// The family screen (e.g. on the fridge): all children together, the
+  /// parent part locked with the PIN.
   screen,
 
-  /// En forælders telefon: fælles opgaveliste, forælder-delen låst med PIN.
+  /// A parent's phone: shared task list, the parent part locked with the PIN.
   phone,
 
-  /// Et barns egen tablet, bundet til præcis ét barn. Viser kun det barns
-  /// opgaver og har INGEN forælder-tilstand - HA afviser i øvrigt alt andet
-  /// end "markér udført" for barnet selv. Rollen kan kun fjernes ved at
-  /// geninstallere appen (AndroidManifest: allowBackup="false").
+  /// A child's own tablet, bound to exactly one child. Only shows that child's
+  /// tasks and has NO parent mode - HA also refuses anything other than "mark
+  /// as done" for the child itself. The role can only be removed by
+  /// reinstalling the app (AndroidManifest: allowBackup="false").
   childTablet;
 
-  /// Rollens navn i Home Assistant-integrationen.
+  /// The role's name in the Home Assistant integration.
   static DeviceRole? fromHa(String? value) {
     switch (value) {
       case 'screen':
@@ -35,31 +38,33 @@ enum DeviceRole {
   }
 }
 
-/// Simpel wrapper omkring [SharedPreferences] til alle lokale
-/// indstillinger: forbindelsen til Home Assistant, rolle, PIN-hash og en
-/// lokal kopi af familiens indstillinger/saldo-info (fra HA).
+/// Simple wrapper around [SharedPreferences] for all local settings: the
+/// language, the connection to Home Assistant, role, PIN hash and a local
+/// copy of the family's settings/balance info (from HA).
 class SettingsService {
+  static const _keyLanguage = 'language';
+  static const _keyCurrency = 'currency';
   static const _keyRole = 'role';
   static const _keyPinHash = 'pin_hash';
   static const _keyPinSalt = 'pin_salt';
   static const _keyDeviceName = 'device_name';
   static const _keyFamilyName = 'family_name';
 
-  // Forbindelsen til Home Assistant (fra parringen).
+  // The connection to Home Assistant (from pairing).
   static const _keyHaUrl = 'ha_url';
   static const _keyHaDeviceId = 'ha_device_id';
   static const _keyHaDeviceKey = 'ha_device_key';
 
-  // Barne-tablet: hvilket barn tabletten er bundet til.
+  // Child's tablet: which child the tablet is bound to.
   static const _keyBoundChildId = 'bound_child_id';
 
-  // Familiens tider/grænser (JSON, se FamilySettings) og forældres
-  // ophævelse af spærring for i dag (JSON: barn-id -> "YYYY-MM-DD").
+  // The family's times/limits (JSON, see FamilySettings) and parents'
+  // suspension of the restriction for today (JSON: child id -> "YYYY-MM-DD").
   static const _keyFamilySettings = 'family_settings';
   static const _keyRestrictionSuspensions = 'restriction_suspensions';
 
-  // Seneste app-version der er givet besked om (så notifikationen kun
-  // kommer én gang pr. version).
+  // The latest app version that has been notified about (so the notification
+  // only comes once per version).
   static const _keyNotifiedUpdateCode = 'notified_update_code';
 
   static const _keyTotalPaidOutOre = 'total_paid_out_ore';
@@ -74,7 +79,26 @@ class SettingsService {
     return SettingsService(prefs);
   }
 
-  // ---- Rolle og forbindelse ---------------------------------------------
+  // ---- Language -----------------------------------------------------------
+
+  /// The app's language code (`en`, `da`, `de`, `es`, `fr`), or `null` until
+  /// it has been chosen on first start. Kept when the connection is
+  /// forgotten.
+  String? get language => _prefs.getString(_keyLanguage);
+
+  Future<void> setLanguage(String language) =>
+      _prefs.setString(_keyLanguage, language);
+
+  // ---- Currency -------------------------------------------------------------
+
+  /// The currency the family's amounts are shown in. Chosen in Home Assistant
+  /// (free text, e.g. "DKK", "kr" or "€") and synced from there.
+  String get currency => _prefs.getString(_keyCurrency) ?? defaultCurrency;
+
+  Future<void> setCurrency(String currency) =>
+      _prefs.setString(_keyCurrency, currency);
+
+  // ---- Role and connection -------------------------------------------------
 
   DeviceRole? get role {
     final v = _prefs.getString(_keyRole);
@@ -111,9 +135,9 @@ class SettingsService {
     await _prefs.setString(_keyHaDeviceKey, connection.key);
   }
 
-  /// Glemmer forbindelsen, rollen og PIN'en (fx når enheden er fjernet i
-  /// Home Assistant). Enheden skal derefter forbindes igen med en ny
-  /// QR-kode fra HA.
+  /// Forgets the connection, the role and the PIN (e.g. when the device has
+  /// been removed in Home Assistant). The device must then be connected again
+  /// with a new code from HA.
   Future<void> clearConnection() async {
     for (final key in [
       _keyHaUrl,
@@ -129,7 +153,7 @@ class SettingsService {
     }
   }
 
-  // ---- Barne-tablet -----------------------------------------------------
+  // ---- Child's tablet ---------------------------------------------------
 
   String? get boundChildId => _prefs.getString(_keyBoundChildId);
 
@@ -137,7 +161,7 @@ class SettingsService {
       ? _prefs.remove(_keyBoundChildId)
       : _prefs.setString(_keyBoundChildId, childId);
 
-  // ---- Familiens tider og grænser -----------------------------------------
+  // ---- The family's times and limits -----------------------------------------
 
   FamilySettings get familySettings {
     final raw = _prefs.getString(_keyFamilySettings);
@@ -152,8 +176,8 @@ class SettingsService {
   Future<void> setFamilySettings(FamilySettings value) =>
       _prefs.setString(_keyFamilySettings, jsonEncode(value.toJson()));
 
-  /// Barn-id -> dato (`YYYY-MM-DD`) hvor en forælder har ophævet barnets
-  /// spærring for resten af dagen.
+  /// Child id -> date (`YYYY-MM-DD`) on which a parent has lifted the child's
+  /// restriction for the rest of the day.
   Map<String, String> get restrictionSuspensions {
     final raw = _prefs.getString(_keyRestrictionSuspensions);
     if (raw == null || raw.isEmpty) return {};
@@ -180,7 +204,7 @@ class SettingsService {
   Future<void> setNotifiedUpdateCode(int code) =>
       _prefs.setInt(_keyNotifiedUpdateCode, code);
 
-  // ---- PIN (familiens forælder-PIN, sat i Home Assistant) -----------------
+  // ---- PIN (the family's parent PIN, set in Home Assistant) -----------------
 
   bool get hasPin =>
       _prefs.containsKey(_keyPinHash) && _prefs.containsKey(_keyPinSalt);
@@ -193,11 +217,11 @@ class SettingsService {
     await _prefs.setString(_keyPinSalt, salt);
   }
 
-  // ---- Saldo ---------------------------------------------------------------
+  // ---- Balance ---------------------------------------------------------------
   //
-  // [totalPaidOutOre] var ét globalt udbetalt-beløb fra dengang appen kun
-  // understøttede ét barn; det bruges kun af engangs-migrationen i
-  // TaskRepository.migrateLegacyPaidOutIfNeeded. Udbetalt er nu pr. barn.
+  // [totalPaidOutOre] was one global paid-out amount from when the app only
+  // supported one child; it is only used by the one-time migration in
+  // TaskRepository.migrateLegacyPaidOutIfNeeded. Paid out is now per child.
 
   int get totalPaidOutOre => _prefs.getInt(_keyTotalPaidOutOre) ?? 0;
 
@@ -211,8 +235,8 @@ class SettingsService {
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       return decoded.map((key, value) => MapEntry(key, value as int));
     } catch (_) {
-      // Defensivt: en ugyldig/korrupt gemt værdi må ikke crashe appen -
-      // behandles blot som "intet udbetalt endnu for nogen".
+      // Defensive: an invalid/corrupt stored value must not crash the app -
+      // it is simply treated as "nothing paid out yet for anyone".
       return {};
     }
   }
@@ -228,9 +252,9 @@ class SettingsService {
     await setPaidOutOreByChild(current);
   }
 
-  // ---- Simpel offline-kø ------------------------------------------------
-  // Handlinger der ikke kunne sendes til Home Assistant med det samme, gemt
-  // som JSON-strenge og sendt igen senere i samme rækkefølge.
+  // ---- Simple offline queue ------------------------------------------------
+  // Actions that could not be sent to Home Assistant right away, stored as
+  // JSON strings and sent again later in the same order.
 
   List<String> get offlineQueueRaw =>
       _prefs.getStringList(_keyOfflineQueue) ?? const [];

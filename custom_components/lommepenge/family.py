@@ -1,9 +1,9 @@
-"""Familiens data og handlinger - HA er "sandheden".
+"""The family's data and actions - HA is the "source of truth".
 
-En direkte oversættelse af appens `TaskRepository`: de samme handlinger
-(`create_task`, `complete_task`, `approve_completion` ...) med de samme
-regler og fejlbeskeder, og samme JSON-form som appens sync-protokol, så
-appen kan bruge HA's svar direkte som sin lokale cache.
+A direct translation of the app's `TaskRepository`: the same actions
+(`create_task`, `complete_task`, `approve_completion` ...) with the same
+rules and error messages, and the same JSON shape as the app's sync
+protocol, so the app can use HA's responses directly as its local cache.
 """
 
 from __future__ import annotations
@@ -13,10 +13,12 @@ from typing import Any
 import uuid
 
 from . import logic
+from .const import DEFAULT_CURRENCY
+from .i18n import LocalizedError, format_amount, translate
 
 
-class FamilyError(Exception):
-    """En handling er ikke gyldig i den nuværende tilstand."""
+class FamilyError(LocalizedError):
+    """An action is not valid in the current state."""
 
 
 def empty_family() -> dict[str, Any]:
@@ -35,22 +37,22 @@ def _new_id() -> str:
     return str(uuid.uuid4())
 
 
-def _require_str(payload: dict[str, Any], key: str, message: str) -> str:
+def _require_str(payload: dict[str, Any], key: str, error: str) -> str:
     value = payload.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise FamilyError(message)
+        raise FamilyError(error)
     return value
 
 
 def _require_int(payload: dict[str, Any], key: str) -> int:
     value = payload.get(key)
     if not isinstance(value, int) or isinstance(value, bool):
-        raise FamilyError(f"Handlingen mangler et gyldigt {key}.")
+        raise FamilyError("missing_field", field=key)
     return value
 
 
 class Family:
-    """Wrapper om familiens data-dict (gemmes som JSON i HA's storage)."""
+    """Wrapper around the family's data dict (stored as JSON in HA's storage)."""
 
     def __init__(self, data: dict[str, Any] | None = None) -> None:
         self.data = empty_family()
@@ -58,7 +60,7 @@ class Family:
             self.data.update(data)
         self.data["familySettings"] = logic.settings_from(self.data.get("familySettings"))
 
-    # ---- Opslag --------------------------------------------------------------
+    # ---- Lookups ---------------------------------------------------------------
 
     @property
     def children(self) -> list[dict[str, Any]]:
@@ -82,7 +84,7 @@ class Family:
         return [t for t in self.data["tasks"] if t.get("active", True)]
 
     def resolved_child_ids(self, task: dict[str, Any]) -> list[str]:
-        """Børn opgaven gælder for nu; "alle børn" slås op dynamisk."""
+        """Children the task applies to now; "all children" is looked up dynamically."""
         child_ids = [c["id"] for c in self.children]
         assigned = task.get("assignedChildIds")
         if not assigned:
@@ -96,7 +98,7 @@ class Family:
             if c["childId"] == child_id and (task_id is None or c["taskId"] == task_id)
         ]
 
-    # ---- Saldo ---------------------------------------------------------------
+    # ---- Balance -----------------------------------------------------------------
 
     def total_earned_ore(self, child_id: str) -> int:
         return sum(
@@ -123,9 +125,11 @@ class Family:
             if c["status"] == "approved" and logic.parse_dt(c["completedAt"]) > cutoff
         )
 
-    # ---- Opfølgning ------------------------------------------------------------
+    # ---- Follow-up -----------------------------------------------------------------
 
-    def follow_up(self, child_id: str, now: datetime) -> dict[str, Any]:
+    def follow_up(
+        self, child_id: str, now: datetime, language: str | None = None
+    ) -> dict[str, Any]:
         tasks = [t for t in self.active_tasks if child_id in self.resolved_child_ids(t)]
         return logic.compute_follow_up(
             tasks,
@@ -133,14 +137,15 @@ class Family:
             self.settings,
             now,
             self.data["restrictionSuspensions"].get(child_id),
+            language,
         )
 
-    # ---- Handlinger ------------------------------------------------------------
+    # ---- Actions -------------------------------------------------------------------
 
     def apply_action(self, action: dict[str, Any], now: datetime) -> dict[str, Any] | None:
-        """Udfører én handling. Returnerer den berørte completion, hvis nogen.
+        """Performs one action. Returns the affected completion, if any.
 
-        Kaster `FamilyError` med en dansk besked, som appen viser direkte.
+        Raises `FamilyError`, whose message the app shows in its own language.
         """
         action_type = action.get("type")
         payload = action.get("payload")
@@ -148,16 +153,16 @@ class Family:
             payload = {}
         handler = getattr(self, f"_action_{action_type}", None)
         if not isinstance(action_type, str) or handler is None:
-            raise FamilyError(f"Ukendt handling: {action_type}")
+            raise FamilyError("unknown_action", action=action_type)
         return handler(payload, now)
 
     def _task_fields(self, payload: dict[str, Any], existing: dict[str, Any] | None) -> dict[str, Any]:
-        """Felter fra en create/update-payload. Ved update betyder en manglende
-        nøgle "behold", mens en eksplicit `null` nulstiller (som i appen)."""
-        title = _require_str(payload, "title", "Opgaven skal have en titel.").strip()
+        """Fields from a create/update payload. On update a missing key means
+        "keep", while an explicit `null` resets (like in the app)."""
+        title = _require_str(payload, "title", "task_title_required").strip()
         amount = _require_int(payload, "amountOre")
         if amount < 0:
-            raise FamilyError("Beløbet kan ikke være negativt.")
+            raise FamilyError("negative_amount")
         recurrence = payload.get("recurrence")
         if recurrence not in logic.RECURRENCES:
             recurrence = "once"
@@ -172,7 +177,7 @@ class Family:
         show_in_calendar = payload.get("showInCalendar")
         fields = {
             "title": title,
-            # Beskrivelsen sendes altid med; mangler den, er den fjernet.
+            # The description is always sent; if it is missing, it was removed.
             "description": payload.get("description") or None,
             "amountOre": amount,
             "recurrence": recurrence,
@@ -199,39 +204,37 @@ class Family:
             "createdAt": logic.to_iso(now),
             "active": True,
         }
-        # Samme id to gange (fx en gentaget offline-handling) erstatter.
+        # The same id twice (e.g. a repeated offline action) replaces.
         self.data["tasks"] = [t for t in self.data["tasks"] if t["id"] != task_id] + [task]
 
     def _action_update_task(self, payload: dict[str, Any], now: datetime) -> None:
-        task = self.task(_require_str(payload, "id", "Handlingen mangler et id."))
+        task = self.task(_require_str(payload, "id", "missing_id"))
         if task is None:
-            raise FamilyError("Opgaven findes ikke længere.")
+            raise FamilyError("task_not_found")
         task.update(self._task_fields(payload, task))
 
     def _action_delete_task(self, payload: dict[str, Any], now: datetime) -> None:
-        task = self.task(_require_str(payload, "id", "Handlingen mangler et id."))
+        task = self.task(_require_str(payload, "id", "missing_id"))
         if task is not None:
             task["active"] = False
 
     def _action_complete_task(self, payload: dict[str, Any], now: datetime) -> dict[str, Any]:
-        child_id = _require_str(
-            payload, "childId", "Handlingen mangler oplysning om hvilket barn (childId)."
-        )
+        child_id = _require_str(payload, "childId", "missing_child_id")
         completion_id = payload.get("completionId") or _new_id()
         if (existing := self.completion(completion_id)) is not None:
-            return existing  # samme handling sendt igen (offline-kø)
-        task = self.task(_require_str(payload, "taskId", "Handlingen mangler en opgave."))
+            return existing  # the same action sent again (offline queue)
+        task = self.task(_require_str(payload, "taskId", "missing_task"))
         if task is None or not task.get("active", True):
-            raise FamilyError("Opgaven findes ikke længere.")
+            raise FamilyError("task_not_found")
         if child_id not in self.resolved_child_ids(task):
-            raise FamilyError("Opgaven er ikke tildelt dette barn.")
+            raise FamilyError("task_not_assigned")
         if (
             logic.compute_availability(task, self._completions_for(child_id, task["id"]), now)
             != logic.AVAILABLE
         ):
-            raise FamilyError("Opgaven kan ikke markeres udført lige nu.")
-        # HA's ur bestemmer tidspunktet (og dermed "for sent"), ikke
-        # tablettens - et barn kan ikke snyde ved at stille uret tilbage.
+            raise FamilyError("task_not_available")
+        # HA's clock decides the time (and thereby "late"), not the tablet's -
+        # a child cannot cheat by setting the clock back.
         completion = {
             "id": completion_id,
             "taskId": task["id"],
@@ -246,13 +249,11 @@ class Family:
         return completion
 
     def _pending_completion(self, payload: dict[str, Any]) -> dict[str, Any]:
-        completion = self.completion(
-            _require_str(payload, "completionId", "Handlingen mangler en udførelse.")
-        )
+        completion = self.completion(_require_str(payload, "completionId", "missing_completion"))
         if completion is None:
-            raise FamilyError("Udførelsen findes ikke.")
+            raise FamilyError("completion_not_found")
         if completion["status"] != "pending":
-            raise FamilyError("Udførelsen er allerede behandlet.")
+            raise FamilyError("completion_already_handled")
         return completion
 
     def _action_approve_completion(self, payload: dict[str, Any], now: datetime) -> dict[str, Any]:
@@ -267,11 +268,9 @@ class Family:
         return completion
 
     def _existing_child_id(self, payload: dict[str, Any], key: str = "childId") -> str:
-        child_id = _require_str(
-            payload, key, "Handlingen mangler oplysning om hvilket barn (childId)."
-        )
+        child_id = _require_str(payload, key, "missing_child_id")
         if self.child(child_id) is None:
-            raise FamilyError("Barnet findes ikke længere.")
+            raise FamilyError("child_not_found")
         return child_id
 
     def _action_mark_paid_out(self, payload: dict[str, Any], now: datetime) -> None:
@@ -285,7 +284,7 @@ class Family:
         amount = _require_int(payload, "amountOre")
         note = payload.get("note")
         if not isinstance(note, str) or not note.strip():
-            raise FamilyError("En saldo-justering skal have en note.")
+            raise FamilyError("adjustment_note_required")
         adjustment_id = payload.get("id") or _new_id()
         if any(a["id"] == adjustment_id for a in self.data["balanceAdjustments"]):
             return
@@ -300,7 +299,7 @@ class Family:
         )
 
     def _action_add_child(self, payload: dict[str, Any], now: datetime) -> None:
-        name = _require_str(payload, "name", "Barnets navn må ikke være tomt.").strip()
+        name = _require_str(payload, "name", "child_name_required").strip()
         child_id = payload.get("id") or _new_id()
         if self.child(child_id) is not None:
             return
@@ -315,7 +314,7 @@ class Family:
 
     def _action_rename_child(self, payload: dict[str, Any], now: datetime) -> None:
         child_id = self._existing_child_id(payload, "id")
-        name = _require_str(payload, "name", "Barnets navn må ikke være tomt.").strip()
+        name = _require_str(payload, "name", "child_name_required").strip()
         self.child(child_id)["name"] = name
 
     def _action_delete_child(self, payload: dict[str, Any], now: datetime) -> None:
@@ -327,16 +326,16 @@ class Family:
         self.data["restrictionSuspensions"][child_id] = logic.date_key(now)
 
     def _action_set_setting(self, payload: dict[str, Any], now: datetime) -> None:
-        key = _require_str(payload, "key", "Handlingen mangler en indstilling.")
+        key = _require_str(payload, "key", "missing_setting")
         try:
             self.settings[key] = logic.validate_setting(key, payload.get("value"))
-        except ValueError as err:
-            raise FamilyError(str(err)) from err
+        except logic.InvalidSetting as err:
+            raise FamilyError(err.key, **err.params) from err
 
-    # ---- Udtræk ----------------------------------------------------------------
+    # ---- Exports -------------------------------------------------------------------
 
     def state_json(self, family_name: str, now: datetime) -> dict[str, Any]:
-        """Hele familiens data i appens sync-format (`getStateJson`)."""
+        """All the family's data in the app's sync format (`getStateJson`)."""
         return {
             "deviceName": family_name,
             "familyName": family_name,
@@ -351,10 +350,26 @@ class Family:
             "updatedAt": logic.to_iso(now),
         }
 
-    def completion_json(self, completion: dict[str, Any]) -> dict[str, Any]:
-        """En udførelse med navne - bruges i hændelser og sensorer."""
+    def completion_json(
+        self,
+        completion: dict[str, Any],
+        language: str | None = None,
+        currency: str = DEFAULT_CURRENCY,
+    ) -> dict[str, Any]:
+        """A completion with names - used in events and sensors. `message` is a
+        ready-made notification text in `language` (used by the blueprints)."""
         child = self.child(completion["childId"]) or {}
         task = self.task(completion["taskId"]) or {}
+        late = completion.get("late", False)
+        message = translate(
+            "notify_completion",
+            language,
+            child=child.get("name", ""),
+            task=task.get("title", ""),
+            amount=format_amount(completion["amountAtCompletionOre"], language, currency),
+        )
+        if late:
+            message += translate("notify_late", language)
         return {
             "completionId": completion["id"],
             "childId": completion["childId"],
@@ -363,11 +378,18 @@ class Family:
             "taskTitle": task.get("title", ""),
             "amountOre": completion["amountAtCompletionOre"],
             "completedAt": completion["completedAt"],
-            "late": completion.get("late", False),
+            "late": late,
+            "message": message,
         }
 
-    def summary(self, family_name: str, now: datetime) -> dict[str, Any]:
-        """Overblik til HA's entiteter og hændelser."""
+    def summary(
+        self,
+        family_name: str,
+        now: datetime,
+        language: str | None = None,
+        currency: str = DEFAULT_CURRENCY,
+    ) -> dict[str, Any]:
+        """Overview for HA's entities and events."""
         children = []
         for child in self.children:
             children.append(
@@ -376,7 +398,7 @@ class Family:
                     "name": child["name"],
                     "balanceOre": self.balance_ore(child["id"]),
                     "earnedThisWeekOre": self.earned_this_week_ore(child["id"], now),
-                    **self.follow_up(child["id"], now),
+                    **self.follow_up(child["id"], now, language),
                 }
             )
         return {
@@ -385,7 +407,7 @@ class Family:
             "settings": dict(self.settings),
             "children": children,
             "pending": [
-                self.completion_json(c)
+                self.completion_json(c, language, currency)
                 for c in self.data["completions"]
                 if c["status"] == "pending"
             ],

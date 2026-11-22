@@ -1,0 +1,209 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Lommepenge einrichten",
+        "description": "Home Assistant speichert die Aufgaben und das Taschengeld der Familie. Die App auf dem Familienbildschirm, den Handys der Eltern und den Tablets der Kinder verbindet sich hierher.",
+        "data": {
+          "family_name": "Name der Familie",
+          "pin": "Eltern-PIN (4-8 Ziffern)",
+          "language": "Sprache",
+          "currency": "Währung"
+        },
+        "data_description": {
+          "pin": "Entsperrt den Elternbereich der App auf dem Familienbildschirm und den Handys der Eltern.",
+          "language": "Sprache der Entitätsnamen, Sperrgründe, Benachrichtigungen und der Installationsseite - unabhängig von der Sprache von Home Assistant. Jedes Gerät wählt seine eigene Sprache in der App.",
+          "currency": "So geschrieben, wie sie angezeigt werden soll, z. B. EUR, €, DKK oder CHF."
+        }
+      }
+    },
+    "error": {
+      "name_required": "Gib einen Namen ein.",
+      "invalid_pin": "Die PIN muss aus 4-8 Ziffern bestehen.",
+      "invalid_currency": "Gib eine Währung ein (höchstens 10 Zeichen)."
+    },
+    "abort": {
+      "single_instance_allowed": "Lommepenge ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Lommepenge-Einstellungen",
+        "description": "Home Assistant lädt die App aus den Releases dieses Repositorys und gibt neue Versionen an die Geräte der Familie weiter. Ein Token wird nur für ein privates Repository benötigt.",
+        "data": {
+          "language": "Sprache",
+          "currency": "Währung",
+          "github_token": "GitHub-Token (nur für ein privates Repository)",
+          "github_repo": "Repository mit den App-Releases",
+          "pin": "Neue Eltern-PIN (leer lassen = beibehalten)"
+        },
+        "data_description": {
+          "language": "Sprache der Entitätsnamen, Sperrgründe, Benachrichtigungen und der Installationsseite - unabhängig von der Sprache von Home Assistant.",
+          "currency": "So geschrieben, wie sie angezeigt werden soll, z. B. EUR, €, DKK oder CHF."
+        }
+      }
+    },
+    "error": {
+      "invalid_token": "GitHub hat das Token abgelehnt, oder es hat keinen Zugriff auf das Repository.",
+      "cannot_connect": "GitHub ist nicht erreichbar.",
+      "invalid_pin": "Die PIN muss aus 4-8 Ziffern bestehen.",
+      "invalid_currency": "Gib eine Währung ein (höchstens 10 Zeichen)."
+    }
+  },
+  "config_subentries": {
+    "device": {
+      "entry_type": "Gerät",
+      "initiate_flow": {
+        "user": "Gerät hinzufügen"
+      },
+      "step": {
+        "user": {
+          "title": "Gerät hinzufügen",
+          "description": "Füge den Familienbildschirm, das Handy eines Elternteils oder das Tablet eines Kindes hinzu.",
+          "data": {
+            "name": "Name",
+            "role": "Rolle"
+          }
+        },
+        "child": {
+          "title": "Welches Kind?",
+          "description": "Das Tablet zeigt nur die Aufgaben dieses Kindes.",
+          "data": {
+            "child_id": "Kind"
+          }
+        },
+        "pair": {
+          "title": "{name} hinzufügen",
+          "description": "Code: **{code}** (einmal gültig, bis {expires} Uhr)\n\nInstalliere die App auf dem Gerät, öffne sie, wähle Mit Code verbinden und gib den Code ein. Die App findet Home Assistant von selbst.\n\n[Seite mit App-Download und QR-Code öffnen]({install_url})\n\nBestätige, sobald das Gerät verbunden ist."
+        },
+        "reconfigure": {
+          "title": "Neuer Code für {name}",
+          "description": "Code: **{code}** (einmal gültig, bis {expires} Uhr)\n\nNach einer Neuinstallation der App verwenden: Mit Code verbinden in der App. Die alte Verbindung endet, sobald sich das Gerät neu verbindet.\n\n[Seite mit App-Download und QR-Code öffnen]({install_url})"
+        }
+      },
+      "error": {
+        "name_required": "Gib einen Namen ein."
+      },
+      "abort": {
+        "not_loaded": "Lommepenge läuft nicht.",
+        "no_children": "Lege das Kind zuerst in der App an (auf dem Familienbildschirm oder dem Handy eines Elternteils).",
+        "reconfigure_successful": "Fertig."
+      }
+    }
+  },
+  "selector": {
+    "role": {
+      "options": {
+        "screen": "Familienbildschirm (alle Kinder)",
+        "parent": "Handy eines Elternteils",
+        "child": "Tablet des Kindes (ein Kind)"
+      }
+    },
+    "language": {
+      "options": {
+        "en": "English",
+        "da": "Dansk",
+        "de": "Deutsch",
+        "es": "Español",
+        "fr": "Français"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "pending_approvals": {
+        "name": "Wartet auf Freigabe"
+      },
+      "balance": {
+        "name": "Guthaben"
+      },
+      "earned_this_week": {
+        "name": "Diese Woche verdient"
+      },
+      "last_seen": {
+        "name": "Letzter Kontakt"
+      }
+    },
+    "binary_sensor": {
+      "restricted": {
+        "name": "Tablet gesperrt"
+      },
+      "overdue": {
+        "name": "Überfällige Aufgabe"
+      }
+    },
+    "button": {
+      "suspend_restriction": {
+        "name": "Sperre heute aufheben"
+      }
+    },
+    "time": {
+      "default_due_time": {
+        "name": "Standardfrist"
+      },
+      "restriction_start": {
+        "name": "Sperrzeit ab"
+      },
+      "restriction_end": {
+        "name": "Sperrzeit bis"
+      }
+    },
+    "number": {
+      "late_pause_minutes": {
+        "name": "Pause bei Verspätung"
+      },
+      "warning_minutes": {
+        "name": "Warnung vor der Frist"
+      },
+      "winter_from_week": {
+        "name": "Winter ab Woche"
+      },
+      "winter_to_week": {
+        "name": "Winter bis Woche"
+      }
+    },
+    "update": {
+      "app": {
+        "name": "App"
+      }
+    }
+  },
+  "exceptions": {
+    "not_set_up": {
+      "message": "Lommepenge ist nicht eingerichtet."
+    }
+  },
+  "services": {
+    "approve": {
+      "name": "Aufgabe freigeben",
+      "description": "Gibt eine erledigte Aufgabe frei, sodass der Betrag dem Guthaben des Kindes gutgeschrieben wird.",
+      "fields": {
+        "completion_id": {
+          "name": "Erledigungs-ID",
+          "description": "completionId aus dem Ereignis lommepenge_event."
+        }
+      }
+    },
+    "reject": {
+      "name": "Aufgabe ablehnen",
+      "description": "Lehnt eine erledigte Aufgabe ab. Das Kind kann sie erneut erledigen.",
+      "fields": {
+        "completion_id": {
+          "name": "Erledigungs-ID",
+          "description": "completionId aus dem Ereignis lommepenge_event."
+        }
+      }
+    },
+    "suspend_restriction": {
+      "name": "Sperre heute aufheben",
+      "description": "Hebt die Sperre des Kindes für den Rest des Tages auf.",
+      "fields": {
+        "child_id": {
+          "name": "Kind-ID",
+          "description": "Das Attribut child_id des Sensors \"Tablet gesperrt\" des Kindes."
+        }
+      }
+    }
+  }
+}

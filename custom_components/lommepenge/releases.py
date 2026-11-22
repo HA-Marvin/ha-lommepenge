@@ -1,9 +1,10 @@
-"""Appens versioner: henter den nyeste release fra GitHub.
+"""The app's versions: fetches the latest release from GitHub.
 
-App og integration udgives sammen: hver release i integrationens repo har
-den byggede APK og dens SHA-256 som filer. Enhederne henter APK'en fra HA,
-som streamer den videre fra GitHub (intet gemmes på disken, så den fylder
-ikke i HA's backups). En GitHub-nøgle kræves kun for et privat repo.
+App and integration are released together: every release in the integration's
+repository has the built APK and its SHA-256 as files. The devices fetch the
+APK from HA, which streams it on from GitHub (nothing is stored on disk, so it
+does not take up space in HA's backups). A GitHub token is only needed for a
+private repository.
 """
 
 from __future__ import annotations
@@ -30,11 +31,11 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class GitHubError(Exception):
-    """GitHub svarede ikke som forventet."""
+    """GitHub did not respond as expected."""
 
 
 class GitHubAuthError(GitHubError):
-    """Nøglen er ugyldig eller har ikke adgang."""
+    """The token is invalid or has no access."""
 
 
 @dataclass(frozen=True)
@@ -48,7 +49,7 @@ class AppRelease:
     notes: str | None
 
     def as_json(self) -> dict[str, Any]:
-        """Det enhederne får at vide om opdateringen."""
+        """What the devices are told about the update."""
         return {
             "version": self.version,
             "versionCode": self.version_code,
@@ -58,7 +59,7 @@ class AppRelease:
 
 
 def version_code(tag: str) -> int | None:
-    """`v1.2.3` -> 10203 (samme regel som app-repoets release-workflow)."""
+    """`v1.2.3` -> 10203 (the same rule as the release workflow)."""
     match = _TAG.match(tag)
     if match is None:
         return None
@@ -67,7 +68,7 @@ def version_code(tag: str) -> int | None:
 
 
 class GitHubReleases:
-    """Læser releases fra ét (privat) repo med en læse-nøgle."""
+    """Reads releases from one repository, optionally with a read token."""
 
     def __init__(self, session: aiohttp.ClientSession, repo: str, token: str | None) -> None:
         self._session = session
@@ -86,30 +87,30 @@ class GitHubReleases:
                 url, headers=self._headers(accept), timeout=aiohttp.ClientTimeout(total=30)
             )
         except (aiohttp.ClientError, TimeoutError) as err:
-            raise GitHubError(f"Kan ikke nå GitHub: {err}") from err
+            raise GitHubError(f"Cannot reach GitHub: {err}") from err
         if response.status in (401, 403):
             response.release()
-            raise GitHubAuthError("GitHub afviste nøglen.")
+            raise GitHubAuthError("GitHub rejected the token.")
         return response
 
     async def validate(self) -> None:
-        """Tjekker at nøglen kan læse repoet."""
+        """Checks that the token can read the repository."""
         response = await self._get(f"{GITHUB_API}/repos/{self._repo}")
         response.release()
         if response.status == 404:
-            raise GitHubAuthError("Repoet findes ikke, eller nøglen har ikke adgang.")
+            raise GitHubAuthError("The repository does not exist, or the token has no access.")
         if response.status != 200:
-            raise GitHubError(f"GitHub svarede {response.status}.")
+            raise GitHubError(f"GitHub responded {response.status}.")
 
     async def latest(self) -> AppRelease | None:
-        """Nyeste release med en APK og dens SHA-256, eller `None`."""
+        """The latest release with an APK and its SHA-256, or `None`."""
         response = await self._get(f"{GITHUB_API}/repos/{self._repo}/releases/latest")
         if response.status == 404:
             response.release()
             return None
         if response.status != 200:
             response.release()
-            raise GitHubError(f"GitHub svarede {response.status}.")
+            raise GitHubError(f"GitHub responded {response.status}.")
         release = await response.json()
 
         code = version_code(release.get("tag_name", ""))
@@ -117,7 +118,7 @@ class GitHubReleases:
         apk = next((a for name, a in assets.items() if name.endswith(".apk")), None)
         if code is None or apk is None or f"{apk['name']}.sha256" not in assets:
             _LOGGER.warning(
-                "Release %s mangler versionsnummer, APK eller .sha256", release.get("tag_name")
+                "Release %s is missing a version number, APK or .sha256", release.get("tag_name")
             )
             return None
 
@@ -129,15 +130,15 @@ class GitHubReleases:
         sha256 = (await checksum.text()).strip().split()[0].lower() if checksum.status == 200 else ""
         checksum.release()
         if not _SHA256.match(sha256):
-            raise GitHubError("Ugyldig SHA-256 på releasen.")
+            raise GitHubError("Invalid SHA-256 on the release.")
 
         return AppRelease(
             version=release["tag_name"].lstrip("v"),
             version_code=code,
             sha256=sha256,
             size=apk["size"],
-            # Offentligt repo: den almindelige download-adresse (ingen
-            # API-grænse). Privat repo: API'et med nøglen.
+            # Public repository: the plain download address (no API limit).
+            # Private repository: the API with the token.
             asset_url=apk["url"] if self._token else apk["browser_download_url"],
             release_url=release.get("html_url", ""),
             notes=release.get("body"),
@@ -146,11 +147,11 @@ class GitHubReleases:
     async def stream_apk(
         self, request: web.Request, release: AppRelease
     ) -> web.StreamResponse:
-        """Sender APK'en videre til en enhed uden at gemme den."""
+        """Passes the APK on to a device without storing it."""
         upstream = await self._get(release.asset_url, accept="application/octet-stream")
         if upstream.status != 200:
             upstream.release()
-            raise GitHubError(f"GitHub svarede {upstream.status} på APK'en.")
+            raise GitHubError(f"GitHub responded {upstream.status} for the APK.")
         response = web.StreamResponse(
             headers={
                 "Content-Type": "application/vnd.android.package-archive",
@@ -169,7 +170,7 @@ class GitHubReleases:
 
 
 class ReleaseCoordinator(DataUpdateCoordinator[AppRelease | None]):
-    """Tjekker GitHub for en ny version af appen nogle gange i døgnet."""
+    """Checks GitHub for a new version of the app a few times a day."""
 
     def __init__(self, hass: HomeAssistant, entry, repo: str, token: str | None) -> None:
         super().__init__(

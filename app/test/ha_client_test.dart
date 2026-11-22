@@ -1,5 +1,5 @@
-// Forbindelsen til Home Assistant: links, signatur og AppState mod en
-// falsk Lommepenge-integration (en lokal HttpServer).
+// The connection to Home Assistant: links, signature, language and AppState
+// against a fake Lommepenge integration (a local HttpServer).
 import 'dart:convert';
 import 'dart:io';
 
@@ -14,14 +14,16 @@ import 'package:lommepenge_app/services/crypto_service.dart';
 import 'package:lommepenge_app/services/ha_client.dart';
 import 'package:lommepenge_app/services/settings_service.dart';
 
-/// En falsk Lommepenge-integration: parring, signerede kald og roller.
+/// A fake Lommepenge integration: pairing, signed requests and roles.
 class FakeHa {
   late HttpServer server;
   final devices = <String, ({String key, String role, String? childId})>{};
   final tokens = <String, ({String role, String? childId})>{};
   final actions = <Map<String, dynamic>>[];
+  final languages = <String?>[];
   final client = HaClient();
   Map<String, dynamic>? appUpdate;
+  String currency = 'DKK';
   int stateRequests = 0;
 
   Uri get baseUrl => Uri.parse('http://127.0.0.1:${server.port}');
@@ -29,11 +31,11 @@ class FakeHa {
   String installLink(String token) => '$baseUrl/api/lommepenge/install/$token';
 
   Map<String, dynamic> state(String role, String? childId) => {
-        'familyName': 'Familien',
+        'familyName': 'The Family',
         'children': [
           {'id': 'emma', 'name': 'Emma', 'sortOrder': 0, 'createdAt': '2026-11-01T10:00:00.000'},
           if (role != 'child')
-            {'id': 'oskar', 'name': 'Oskar', 'sortOrder': 1, 'createdAt': '2026-11-01T10:00:00.000'},
+            {'id': 'oscar', 'name': 'Oscar', 'sortOrder': 1, 'createdAt': '2026-11-01T10:00:00.000'},
         ],
         'tasks': [],
         'completions': [],
@@ -41,8 +43,9 @@ class FakeHa {
         'paidOutOreByChild': {},
         'familySettings': {'defaultDueTime': '17:30'},
         'restrictionSuspensions': {},
-        'device': {'id': 'd', 'name': 'Enhed', 'role': role, 'childId': childId},
+        'device': {'id': 'd', 'name': 'Device', 'role': role, 'childId': childId},
         'appUpdate': appUpdate,
+        'currency': currency,
         if (role != 'child') 'pinHash': CryptoService.hashPin('2468', 'salt'),
         if (role != 'child') 'pinSalt': 'salt',
       };
@@ -55,13 +58,14 @@ class FakeHa {
   Future<void> _handle(HttpRequest request) async {
     final body = await utf8.decoder.bind(request).join();
     final path = request.uri.path;
+    languages.add(request.headers.value(HaClient.languageHeader));
     final response = request.response..headers.contentType = ContentType.json;
     if (path == '/api/lommepenge/pair') {
       final token = (jsonDecode(body) as Map)['token'];
       final pairing = tokens.remove(token);
       if (pairing == null) {
         response.statusCode = 410;
-        response.write(jsonEncode({'error': 'Linket er udløbet.'}));
+        response.write(jsonEncode({'error': 'The link has expired.'}));
       } else {
         final id = 'dev-${devices.length}';
         devices[id] = (key: 'key-$id', role: pairing.role, childId: pairing.childId);
@@ -70,8 +74,8 @@ class FakeHa {
           'deviceKey': 'key-$id',
           'role': pairing.role,
           'childId': pairing.childId,
-          'deviceName': 'Enhed',
-          'familyName': 'Familien',
+          'deviceName': 'Device',
+          'familyName': 'The Family',
         }));
       }
       await response.close();
@@ -98,7 +102,7 @@ class FakeHa {
           )['X-Signature'];
     if (device == null || expected != request.headers.value('X-Signature')) {
       response.statusCode = 401;
-      response.write(jsonEncode({'error': 'Ukendt enhed.'}));
+      response.write(jsonEncode({'error': 'Unknown device.'}));
       await response.close();
       return;
     }
@@ -118,13 +122,13 @@ void main() {
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
-    // Testbindingen svarer ellers 400 på al HTTP - her skal appen tale med
-    // den falske Home Assistant på localhost.
+    // The test binding otherwise answers 400 to all HTTP - here the app has to
+    // talk to the fake Home Assistant on localhost.
     HttpOverrides.global = null;
   });
 
-  group('Links fra Home Assistant', () {
-    test('QR-koden peger på installationssiden', () {
+  group('Links from Home Assistant', () {
+    test('the QR code points to the install page', () {
       final link = parseConnectLink(
         'http://192.168.1.10:8123/api/lommepenge/install/abc123',
       )!;
@@ -132,7 +136,7 @@ void main() {
       expect(link.token, 'abc123');
     });
 
-    test('"Åbn appen og forbind" bruger lommepenge://', () {
+    test('"Open the app and connect" uses lommepenge://', () {
       final link = parseConnectLink(
         'lommepenge://pair?url=http%3A%2F%2F192.168.1.10%3A8123&token=xyz',
       )!;
@@ -140,7 +144,7 @@ void main() {
       expect(link.token, 'xyz');
     });
 
-    test('kode tastet i hånden: adresse uden skema og port virker', () {
+    test('code typed by hand: address without scheme and port works', () {
       final link = connectLinkFromCode('192.168.1.10', 'k7m2-qdxa ')!;
       expect(link.baseUrl.toString(), 'http://192.168.1.10:8123');
       expect(link.token, 'K7M2QDXA');
@@ -151,15 +155,16 @@ void main() {
       expect(connectLinkFromCode('192.168.1.10', '  '), isNull);
     });
 
-    test('andre links afvises', () {
-      expect(parseConnectLink('https://example.com/noget'), isNull);
+    test('other links are rejected', () {
+      expect(parseConnectLink('https://example.com/something'), isNull);
       expect(parseConnectLink('lommepenge://pair?token=x'), isNull);
-      expect(parseConnectLink('ikke et link'), isNull);
+      expect(parseConnectLink('not a link'), isNull);
     });
   });
 
-  test('signaturen er den samme som Home Assistants', () {
-    // Referenceværdier beregnet med integrationens runtime.sign().
+  test("the signature is the same as Home Assistant's", () {
+    // Reference values calculated with the integration's runtime.sign()
+    // (the key deliberately contains a non-ASCII character).
     final client = HaClient();
     final connection = HaConnection(
       baseUrl: Uri.parse('http://ha'),
@@ -184,16 +189,17 @@ void main() {
     );
   });
 
-  group('AppState mod Home Assistant', () {
+  group('AppState against Home Assistant', () {
     late FakeHa ha;
     late DatabaseHelper dbHelper;
+    late SettingsService settings;
     late AppState appState;
 
     setUp(() async {
       SharedPreferences.setMockInitialValues({});
       ha = FakeHa();
       await ha.start();
-      final settings = await SettingsService.create();
+      settings = await SettingsService.create();
       dbHelper = DatabaseHelper.instance..overridePath = ':memory:';
       await dbHelper.close();
       final repository =
@@ -206,32 +212,32 @@ void main() {
       await dbHelper.close();
     });
 
-    test('fælles skærm: rolle, data og PIN kommer fra HA', () async {
+    test('family screen: role, data and PIN come from HA', () async {
       ha.tokens['t1'] = (role: 'screen', childId: null);
       expect(await appState.connectWithLink(ha.installLink('t1')), isNull);
 
       expect(appState.isConnected, isTrue);
       expect(appState.isScreen, isTrue);
-      expect(appState.children.map((c) => c.name), ['Emma', 'Oskar']);
+      expect(appState.children.map((c) => c.name), ['Emma', 'Oscar']);
       expect(appState.familySettings.defaultDueTime, '17:30');
       expect(appState.verifyPin('2468'), isTrue);
       expect(appState.verifyPin('0000'), isFalse);
 
-      // Linket virker kun én gang.
+      // The link only works once; HA's own error message is shown.
       expect(
         await appState.connectWithLink(ha.installLink('t1')),
-        'Linket er udløbet.',
+        'The link has expired.',
       );
     });
 
-    test('forbind med kode (uden kamera)', () async {
+    test('connect with code (no camera)', () async {
       ha.tokens['K7M2QDXA'] = (role: 'screen', childId: null);
       final address = '127.0.0.1:${ha.server.port}';
       expect(await appState.connectWithCode(address, 'k7m2qdxa'), isNull);
       expect(appState.isScreen, isTrue);
     });
 
-    test('barnets tablet: ét barn, ingen PIN, kan ikke skifte rolle', () async {
+    test("child's tablet: one child, no PIN, cannot change role", () async {
       ha.tokens['t1'] = (role: 'child', childId: 'emma');
       await appState.connectWithLink(ha.installLink('t1'));
 
@@ -242,12 +248,12 @@ void main() {
       ha.tokens['t2'] = (role: 'screen', childId: null);
       expect(
         await appState.connectWithLink(ha.installLink('t2')),
-        contains('Geninstallér'),
+        contains('Reinstall'),
       );
       expect(appState.isChildTablet, isTrue);
     });
 
-    test('handlinger sendes signeret til HA', () async {
+    test('actions are sent signed to HA', () async {
       ha.tokens['t1'] = (role: 'parent', childId: null);
       await appState.connectWithLink(ha.installLink('t1'));
       await appState.addChild('Ida');
@@ -255,18 +261,18 @@ void main() {
       expect(ha.actions.single['payload']['name'], 'Ida');
     });
 
-    test('fjernet i HA: enheden glemmer forbindelsen', () async {
+    test('removed in HA: the device forgets the connection', () async {
       ha.tokens['t1'] = (role: 'parent', childId: null);
       await appState.connectWithLink(ha.installLink('t1'));
       ha.devices.clear();
 
       await appState.syncNow();
       expect(appState.isConnected, isFalse);
-      expect(appState.connectionMessage, contains('fjernet i Home Assistant'));
+      expect(appState.connectionMessage, contains('removed in Home Assistant'));
       expect(appState.hasPin, isFalse);
     });
 
-    test('ny version i HA vises som opdatering', () async {
+    test('a new version in HA is shown as an update', () async {
       ha.appUpdate = {
         'version': '1.1.0',
         'versionCode': 10100,
@@ -281,6 +287,52 @@ void main() {
       appState.appVersionCode = 10100;
       await appState.syncNow();
       expect(appState.availableUpdate, isNull);
+    });
+
+    test('the currency comes from HA (DKK until then)', () async {
+      expect(appState.currency, 'DKK');
+      ha.currency = '€';
+      ha.tokens['t1'] = (role: 'parent', childId: null);
+      await appState.connectWithLink(ha.installLink('t1'));
+      expect(appState.currency, '€');
+    });
+
+    test('English until a language is chosen; the choice is kept', () async {
+      expect(appState.languageChosen, isFalse);
+      expect(appState.language, 'en');
+
+      await appState.setLanguage('de');
+      expect(appState.languageChosen, isTrue);
+      expect(appState.language, 'de');
+      expect(
+        await appState.connectWithCode('', ''),
+        'Gib die Adresse von Home Assistant und den Code ein.',
+      );
+
+      // Forgetting the connection keeps the language.
+      await appState.disconnect();
+      expect(settings.language, 'de');
+    });
+
+    test('the app sends its language to HA', () async {
+      await appState.setLanguage('es');
+      ha.tokens['t1'] = (role: 'parent', childId: null);
+      await appState.connectWithLink(ha.installLink('t1'));
+      expect(ha.languages, isNotEmpty);
+      expect(ha.languages.toSet(), {'es'});
+    });
+
+    test('an existing (connected) installation keeps Danish', () async {
+      ha.tokens['t1'] = (role: 'parent', childId: null);
+      await appState.connectWithLink(ha.installLink('t1'));
+      expect(appState.languageChosen, isFalse);
+
+      // The next start after updating the app.
+      final restarted = AppState(settings: settings, repository: appState.repository);
+      await restarted.initialize();
+      expect(restarted.language, 'da');
+      expect(restarted.l10n.connectButton, 'Forbind');
+      restarted.dispose();
     });
   });
 }

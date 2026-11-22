@@ -1,52 +1,51 @@
 import '../models/completion.dart';
 import '../models/task.dart';
 
-/// Hvor vidt en opgave kan markeres "udført" af barnet lige nu, og
-/// hvorfor/hvornår ikke.
+/// Whether a task can be marked "done" by the child right now, and why/when
+/// not.
 enum TaskAvailability {
-  /// Kan markeres udført nu.
+  /// Can be marked as done now.
   available,
 
-  /// Der ligger allerede en udførelse og venter på forælder-godkendelse.
+  /// A completion is already waiting for a parent's approval.
   pendingApproval,
 
-  /// Udført og godkendt i dag (kun for daglige opgaver) - tilgængelig igen
-  /// i morgen.
+  /// Done and approved today (daily tasks only) - available again tomorrow.
   doneToday,
 
-  /// Udført og godkendt inden for de sidste 7 dage (kun for ugentlige
-  /// opgaver) - tilgængelig igen når der er gået 7 dage.
+  /// Done and approved within the last 7 days (weekly tasks only) - available
+  /// again once 7 days have passed.
   doneThisWeek,
 
-  /// Engangsopgave der allerede er godkendt - kan ikke udføres igen.
+  /// One-off task that has already been approved - cannot be done again.
   completedOnce,
 
-  /// Opgaven er ikke på ugeplanen i dag (jf. [Task.activeWeekdays]) -
-  /// gælder alle gentagelsestyper undtagen [Recurrence.once].
+  /// The task is not on the week plan today (see [Task.activeWeekdays]) -
+  /// applies to all recurrence types except [Recurrence.once].
   notScheduledToday,
 }
 
-/// Dato (uden klokkeslæt) der bruges til at sammenligne "kalenderdage".
+/// Date (without time of day) used to compare "calendar days".
 DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
-/// Beregner om [task] kan markeres udført lige nu, ud fra dens tidligere
-/// [completions] (kun completions for denne ene opgave).
+/// Calculates whether [task] can be marked as done right now, based on its
+/// previous [completions] (only completions for this one task).
 ///
-/// Reglerne (jf. spec):
-/// - Der kan aldrig markeres udført igen mens der er en 'pending'
-///   completion (venter på godkendelse).
-/// - En afvist ('rejected') completion blokerer ikke - opgaven kan
-///   forsøges igen med det samme.
-/// - Er opgaven gentagende (ikke 'once') og ikke på ugeplanen for
-///   dags dato (jf. [Task.isActiveOn]), er den ikke tilgængelig i dag -
-///   uanset hvad recurrence-reglerne ellers ville sige.
-/// - 'once': kan kun udføres/godkendes én gang nogensinde.
-/// - 'daily': kan udføres igen når kalenderdagen er en anden end den
-///   senest godkendte completion.
-/// - 'weekly': kan udføres igen når der er gået mindst 7 dage siden den
-///   senest godkendte completion.
-/// - 'unlimited': kan altid udføres igen (kun blokeret af en pending
-///   completion) - ignorerer bevidst godkendt-historikken.
+/// The rules:
+/// - It can never be marked as done again while there is a 'pending'
+///   completion (awaiting approval).
+/// - A 'rejected' completion does not block - the task can be tried again
+///   right away.
+/// - If the task is recurring (not 'once') and not on the week plan for
+///   today (see [Task.isActiveOn]), it is not available today - regardless
+///   of what the recurrence rules would otherwise say.
+/// - 'once': can only be done/approved once ever.
+/// - 'daily': can be done again when the calendar day differs from the most
+///   recently approved completion.
+/// - 'weekly': can be done again when at least 7 days have passed since the
+///   most recently approved completion.
+/// - 'unlimited': can always be done again (only blocked by a pending
+///   completion) - deliberately ignores the approved history.
 TaskAvailability computeAvailability(
   Task task,
   List<Completion> completionsForTask, {
@@ -94,23 +93,21 @@ TaskAvailability computeAvailability(
   }
 }
 
-/// Hvor mange dage frem der maksimalt søges efter en tilgængelig dato i
-/// [nextAvailableDate] - fx hvis alle ugedage er fravalgt, findes der
-/// aldrig en tilgængelig dato, og søgningen skal give op frem for at
-/// løbe uendeligt.
+/// How many days ahead [nextAvailableDate] searches for an available date at
+/// most - e.g. if all weekdays are deselected, there is never an available
+/// date, and the search must give up rather than run forever.
 const int _searchWindowDays = 14;
 
-/// Hvornår opgaven tidligst er tilgængelig igen.
+/// When the task is available again at the earliest.
 ///
-/// Bygget som en generisk dag-for-dag-søgning (frem for en lukket-form
-/// switch på recurrence-typen), fordi kombinationen af ugedags-filter
-/// (Feature 2) og recurrence-nedkøling (daily/weekly) ellers hurtigt
-/// bliver svær at holde korrekt i to parallelle implementeringer: her
-/// genbruges [computeAvailability] selv som eneste kilde til sandhed, og
-/// vi finder simpelthen den første kommende dato (inkl. i dag) hvor den
-/// ville svare 'available'. Returnerer `null` hvis ingen sådan dato
-/// findes inden for søgevinduet (fx en opgave hvor alle 7 ugedage er
-/// fravalgt).
+/// Built as a generic day-by-day search (rather than a closed-form switch on
+/// the recurrence type), because the combination of weekday filter and
+/// recurrence cool-down (daily/weekly) otherwise quickly becomes hard to keep
+/// correct in two parallel implementations: here [computeAvailability] itself
+/// is reused as the only source of truth, and we simply find the first
+/// upcoming date (including today) where it would answer 'available'.
+/// Returns `null` if no such date exists within the search window (e.g. a
+/// task where all 7 weekdays are deselected).
 DateTime? nextAvailableDate(
   Task task,
   List<Completion> completionsForTask, {
@@ -118,9 +115,9 @@ DateTime? nextAvailableDate(
 }) {
   final today = _dateOnly(now ?? DateTime.now());
 
-  // Så længe der ligger en pending completion, er der ingen mening i at
-  // lede efter en "næste tilgængelige dato" - den afhænger af en
-  // godkendelse/afvisning der endnu ikke er sket.
+  // As long as a pending completion exists, there is no point in looking for
+  // a "next available date" - it depends on an approval/rejection that has
+  // not happened yet.
   final hasPending =
       completionsForTask.any((c) => c.status == CompletionStatus.pending);
   if (hasPending) return null;

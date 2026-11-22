@@ -2,14 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
-/// Appens bro til Android (se `MainActivity.kt`): links fra Home
-/// Assistants installationsside, appens version og installation af
-/// opdateringer. På andre platforme (og i tests) svarer den neutralt.
+/// The app's bridge to Android (see `MainActivity.kt`): links from Home
+/// Assistant's install page, the app's version and installation of updates.
+/// On other platforms (and in tests) it answers neutrally.
 class NativeBridge {
   static const _channel = MethodChannel('lommepenge/native');
 
   final _links = StreamController<String>.broadcast();
-  final _installFailures = StreamController<String>.broadcast();
+  final _installFailures = StreamController<String?>.broadcast();
 
   NativeBridge() {
     _channel.setMethodCallHandler((call) async {
@@ -17,20 +17,19 @@ class NativeBridge {
         case 'link':
           _links.add(call.arguments as String);
         case 'installFailed':
-          _installFailures.add(
-            (call.arguments as String?) ?? 'Installationen mislykkedes.',
-          );
+          _installFailures.add(call.arguments as String?);
       }
     });
   }
 
-  /// Links der åbner appen, mens den kører.
+  /// Links that open the app while it is running.
   Stream<String> get links => _links.stream;
 
-  /// Fejl fra Androids installation af en opdatering.
-  Stream<String> get installFailures => _installFailures.stream;
+  /// Errors from Android's installation of an update (`null` when Android
+  /// gives no message).
+  Stream<String?> get installFailures => _installFailures.stream;
 
-  /// Linket der startede appen, hvis nogen (kun én gang).
+  /// The link that started the app, if any (only once).
   Future<String?> takeInitialLink() => _call<String>('takeLink');
 
   Future<({String name, int code})> appVersion() async {
@@ -41,8 +40,8 @@ class NativeBridge {
     );
   }
 
-  /// Home Assistant-instanser på hjemmenettet (mDNS), fx til at udfylde
-  /// adressen på forbind-skærmen. Tom liste hvis ingen findes.
+  /// Home Assistant instances on the home network (mDNS), e.g. to fill in the
+  /// address on the connect screen. Empty list if none are found.
   Future<List<({String name, String url})>> discoverHa() async {
     final found = await _call<List>('discoverHa') ?? const [];
     return [
@@ -55,7 +54,7 @@ class NativeBridge {
     ];
   }
 
-  /// Om Android tillader appen at installere opdateringer.
+  /// Whether Android allows the app to install updates.
   Future<bool> canInstall() async => await _call<bool>('canInstall') ?? false;
 
   Future<void> openInstallSettings() => _call<void>('openInstallSettings');
@@ -63,14 +62,19 @@ class NativeBridge {
   Future<void> installApk(String path) =>
       _call<void>('installApk', {'path': path});
 
-  Future<void> notify(String title, String text) =>
-      _call<void>('notify', {'title': title, 'text': text});
+  /// Shows a notification about a new version. [channelName] is the name of
+  /// Android's notification channel (shown in the app's system settings).
+  Future<void> notify(String title, String text, {required String channelName}) =>
+      _call<void>(
+        'notify',
+        {'title': title, 'text': text, 'channelName': channelName},
+      );
 
   Future<T?> _call<T>(String method, [Object? arguments]) async {
     try {
       return await _channel.invokeMethod<T>(method, arguments);
     } on MissingPluginException {
-      return null; // fx Windows-build eller tests
+      return null; // e.g. Windows build or tests
     }
   }
 }

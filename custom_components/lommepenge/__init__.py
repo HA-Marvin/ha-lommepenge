@@ -1,9 +1,9 @@
-"""Lommepenge: familiens opgaver og lommepenge med Home Assistant som server.
+"""Lommepenge: the family's tasks and pocket money with Home Assistant as the server.
 
-HA gemmer familiens data, regner opfølgning og spærring, og er det eneste
-sted appen (fælles skærm, forældres telefoner og børnenes tablets) taler
-med. Enheder tilføjes under integrationen med en QR-kode, og appen og dens
-opdateringer hentes også fra HA.
+HA stores the family's data, calculates follow-up and restrictions, and is the
+only place the app (family screen, parents' phones and children's tablets)
+talks to. Devices are added under the integration with a code, and the app and
+its updates are also fetched from HA.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from .const import (
     ATTR_COMPLETION_ID,
     CONF_GITHUB_REPO,
     CONF_GITHUB_TOKEN,
+    CONF_LANGUAGE,
     DEFAULT_GITHUB_REPO,
     DOMAIN,
     SERVICE_APPROVE,
@@ -33,6 +34,7 @@ from .coordinator import LommepengeConfigEntry, LommepengeCoordinator
 from .entity import child_device_identifier, child_device_name
 from .family import FamilyError
 from .http import async_register_views
+from .i18n import async_entity_names
 from .releases import ReleaseCoordinator
 from .runtime import LommepengeRuntime
 
@@ -50,21 +52,27 @@ PLATFORMS = [
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
+def action_error(runtime: LommepengeRuntime, err: FamilyError) -> HomeAssistantError:
+    """A rejected action from HA itself, in the integration's language."""
+    return HomeAssistantError(f"Lommepenge: {err.translate(runtime.language)}")
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Registrerer appens HTTP-API og integrationens services (én gang)."""
+    """Registers the app's HTTP API and the integration's services (once)."""
     async_register_views(hass)
 
-    def _coordinator() -> LommepengeCoordinator:
+    def _runtime() -> LommepengeRuntime:
         runtime: LommepengeRuntime | None = hass.data.get(DOMAIN)
         if runtime is None or runtime.coordinator is None:
-            raise ServiceValidationError("Lommepenge er ikke sat op.")
-        return runtime.coordinator
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="not_set_up")
+        return runtime
 
     async def _run(action: str, payload: dict) -> None:
+        runtime = _runtime()
         try:
-            await _coordinator().async_action(action, payload)
+            await runtime.coordinator.async_action(action, payload)
         except FamilyError as err:
-            raise HomeAssistantError(f"Lommepenge: {err}") from err
+            raise action_error(runtime, err) from err
 
     async def approve(call: ServiceCall) -> None:
         await _run("approve_completion", {"completionId": call.data[ATTR_COMPLETION_ID]})
@@ -99,11 +107,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: LommepengeConfigEntry) -
         entry.options.get(CONF_GITHUB_REPO, DEFAULT_GITHUB_REPO),
         entry.options.get(CONF_GITHUB_TOKEN) or None,
     )
-    # En fejl her (fx ingen internet) må ikke stoppe resten.
+    # An error here (e.g. no internet) must not stop the rest.
     await runtime.releases.async_refresh()
 
     entry.runtime_data = runtime
     hass.data[DOMAIN] = runtime
+    # Entity names in the integration's language, not HA's.
+    runtime.entity_names = await async_entity_names(hass, runtime.language)
 
     @callback
     def _sync_child_devices() -> None:
@@ -111,7 +121,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LommepengeConfigEntry) -
 
     _sync_child_devices()
     entry.async_on_unload(runtime.coordinator.async_add_listener(_sync_child_devices))
-    # Ny/slettet enhed, ny GitHub-nøgle eller PIN: genindlæs.
+    # New/deleted device, new GitHub token, PIN, language or currency: reload.
     entry.async_on_unload(entry.add_update_listener(_async_reload))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -131,23 +141,29 @@ async def async_unload_entry(hass: HomeAssistant, entry: LommepengeConfigEntry) 
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: LommepengeConfigEntry) -> None:
-    """Integrationen slettes: familiens data og enhedsnøgler slettes også."""
+    """The integration is deleted: the family's data and device keys are deleted too."""
     await LommepengeRuntime(hass, entry).async_remove_storage()
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: LommepengeConfigEntry) -> bool:
     if entry.version == 1:
         _LOGGER.error(
-            "Lommepenge 0.2 bruger Home Assistant som server i stedet for "
-            "køleskabsskærmen. Slet integrationen og tilføj den igen"
+            "Lommepenge 0.2 uses Home Assistant as the server instead of the "
+            "family screen. Delete the integration and add it again"
         )
         return False
+    if entry.version == 2 and entry.minor_version < 2:
+        # Installations from before the language choice were Danish-only, so
+        # they keep Danish. New installations choose (English by default).
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_LANGUAGE: "da"}, minor_version=2
+        )
     return True
 
 
 @callback
 def _async_sync_child_devices(hass: HomeAssistant, entry: LommepengeConfigEntry) -> None:
-    """Børnenes enheder i HA følger appen: omdøb og slet."""
+    """The children's devices in HA follow the app: rename and delete."""
     coordinator = entry.runtime_data.coordinator
     if not coordinator.last_update_success or coordinator.data is None:
         return
@@ -164,7 +180,7 @@ def _async_sync_child_devices(hass: HomeAssistant, entry: LommepengeConfigEntry)
     for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
         identifier = next(iter(device.identifiers), None)
         if identifier is None or not identifier[1].startswith(f"{entry.entry_id}_"):
-            continue  # familien selv eller en af appens enheder
+            continue  # the family itself or one of the app's devices
         if not device.identifiers & current:
             dev_reg.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
 
@@ -172,7 +188,7 @@ def _async_sync_child_devices(hass: HomeAssistant, entry: LommepengeConfigEntry)
 async def async_remove_config_entry_device(
     hass: HomeAssistant, entry: LommepengeConfigEntry, device: dr.DeviceEntry
 ) -> bool:
-    """Et barns enhed kan slettes i HA, når barnet ikke findes i appen."""
+    """A child's device can be deleted in HA when the child no longer exists in the app."""
     if not any(i[1].startswith(f"{entry.entry_id}_") for i in device.identifiers):
         return False
     return not any(

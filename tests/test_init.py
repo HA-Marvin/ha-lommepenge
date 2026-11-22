@@ -1,4 +1,4 @@
-"""Entiteter, services, hændelser og gemning."""
+"""Entities, services, events, saving and migration."""
 
 from __future__ import annotations
 
@@ -13,14 +13,20 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
-from custom_components.lommepenge.const import DOMAIN, EVENT_LOMMEPENGE
+from custom_components.lommepenge.config_flow import hash_pin
+from custom_components.lommepenge.const import (
+    CONF_FAMILY_NAME,
+    CONF_LANGUAGE,
+    DOMAIN,
+    EVENT_LOMMEPENGE,
+)
 
-from .conftest import add_child, setup_entry
+from .conftest import PIN, add_child, family_entry, setup_entry
 
 
 def _entity_id(hass: HomeAssistant, platform: str, unique_id: str) -> str:
     entity_id = er.async_get(hass).async_get_entity_id(platform, DOMAIN, unique_id)
-    assert entity_id, f"Ingen {platform} med unique_id {unique_id}"
+    assert entity_id, f"No {platform} with unique_id {unique_id}"
     return entity_id
 
 
@@ -32,7 +38,7 @@ async def _family_with_task(hass: HomeAssistant, entry: MockConfigEntry):
             "type": "create_task",
             "payload": {
                 "id": "t1",
-                "title": "Tøm opvaskeren",
+                "title": "Empty the dishwasher",
                 "amountOre": 500,
                 "recurrence": "daily",
                 "mandatory": True,
@@ -55,16 +61,16 @@ async def test_restriction_and_events(
     restricted_id = _entity_id(hass, "binary_sensor", f"{entry_id}_emma_restricted")
     assert hass.states.get(restricted_id).state == "off"
 
-    # Fristen passerer: spærret, uden at nogen har gjort noget.
+    # The deadline passes: restricted, without anyone doing anything.
     freezer.move_to("2026-11-23 18:05:00+01:00")
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     state = hass.states.get(restricted_id)
     assert state.state == "on"
-    assert state.attributes["reason"] == "Mangler: Tøm opvaskeren (frist 18:00)"
+    assert state.attributes["reason"] == "Missing: Empty the dishwasher (due 18:00)"
     assert [e.data["event"] for e in events] == ["restriction_changed"]
 
-    # Barnet markerer udført (for sent): afventer godkendelse + pausetid.
+    # The child marks it as done (late): awaiting approval + pause.
     completion = await runtime.async_apply(
         {"type": "complete_task", "payload": {"taskId": "t1", "childId": "emma"}}
     )
@@ -72,12 +78,13 @@ async def test_restriction_and_events(
     pending_event = events[-1]
     assert pending_event.data["event"] == "completion_pending"
     assert pending_event.data["childName"] == "Emma"
-    assert pending_event.data["taskTitle"] == "Tøm opvaskeren"
+    assert pending_event.data["taskTitle"] == "Empty the dishwasher"
     assert pending_event.data["late"] is True
+    assert pending_event.data["message"] == 'Emma did "Empty the dishwasher" – 5 DKK (late)'
     assert pending_event.data["config_entry_id"] == entry_id
     pending_id = _entity_id(hass, "sensor", f"{entry_id}_pending_approvals")
     assert hass.states.get(pending_id).state == "1"
-    assert hass.states.get(restricted_id).state == "on"  # pausetid
+    assert hass.states.get(restricted_id).state == "on"  # pause
 
     freezer.move_to("2026-11-23 18:16:00+01:00")
     async_fire_time_changed(hass)
@@ -91,6 +98,28 @@ async def test_restriction_and_events(
     assert events[-1].data["event"] == "completion_approved"
     balance_id = _entity_id(hass, "sensor", f"{entry_id}_emma_balance")
     assert float(hass.states.get(balance_id).state) == 5.0
+    assert hass.states.get(balance_id).attributes["unit_of_measurement"] == "DKK"
+
+
+async def test_texts_follow_the_chosen_language(hass: HomeAssistant, freezer) -> None:
+    """HA itself runs in English, but the family chose Spanish and euro: the
+    entity names, texts and amounts follow the integration, not HA."""
+    freezer.move_to("2026-11-23 19:00:00+01:00")
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+    assert hass.config.language == "en"
+    entry = family_entry("es", "€")
+    await _family_with_task(hass, entry)
+    restricted_id = _entity_id(hass, "binary_sensor", f"{entry.entry_id}_emma_restricted")
+    restricted = hass.states.get(restricted_id)
+    assert restricted.attributes["reason"] == "Falta: Empty the dishwasher (límite 18:00)"
+    assert restricted.attributes["friendly_name"] == "Lommepenge Emma Tableta bloqueada"
+    balance = hass.states.get(_entity_id(hass, "sensor", f"{entry.entry_id}_emma_balance"))
+    assert balance.attributes["friendly_name"] == "Lommepenge Emma Saldo"
+    assert balance.attributes["unit_of_measurement"] == "€"
+    pending = hass.states.get(_entity_id(hass, "sensor", f"{entry.entry_id}_pending_approvals"))
+    assert pending.attributes["friendly_name"] == "The Family Pendiente de aprobación"
+    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.entry_id)})
+    assert device.model == "Familia"
 
 
 async def test_settings_and_suspend_from_ha(
@@ -125,7 +154,7 @@ async def test_child_devices_follow_the_app(
 ) -> None:
     runtime = await setup_entry(hass, config_entry)
     dev_reg = dr.async_get(hass)
-    # Ingen børn: kun familiens egen enhed.
+    # No children: only the family's own device.
     devices = dr.async_entries_for_config_entry(dev_reg, config_entry.entry_id)
     assert [d.identifiers for d in devices] == [{(DOMAIN, config_entry.entry_id)}]
 
@@ -134,9 +163,9 @@ async def test_child_devices_follow_the_app(
     identifier = (DOMAIN, f"{config_entry.entry_id}_emma")
     assert dev_reg.async_get_device(identifiers={identifier}).name == "Lommepenge Emma"
 
-    await runtime.async_apply({"type": "rename_child", "payload": {"id": "emma", "name": "Emilie"}})
+    await runtime.async_apply({"type": "rename_child", "payload": {"id": "emma", "name": "Emily"}})
     await hass.async_block_till_done()
-    assert dev_reg.async_get_device(identifiers={identifier}).name == "Lommepenge Emilie"
+    assert dev_reg.async_get_device(identifiers={identifier}).name == "Lommepenge Emily"
 
     await runtime.async_apply({"type": "delete_child", "payload": {"id": "emma"}})
     await hass.async_block_till_done()
@@ -152,6 +181,21 @@ async def test_data_survives_restart(hass: HomeAssistant, config_entry: MockConf
 
     assert await hass.config_entries.async_unload(config_entry.entry_id)
     assert config_entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_existing_install_keeps_danish(hass: HomeAssistant) -> None:
+    """Installations from before the language choice (2.1) were Danish-only."""
+    old = MockConfigEntry(
+        domain=DOMAIN,
+        version=2,
+        minor_version=1,
+        title="Familien",
+        data={CONF_FAMILY_NAME: "Familien", **hash_pin(PIN)},
+    )
+    runtime = await setup_entry(hass, old)
+    assert old.minor_version == 2
+    assert old.data[CONF_LANGUAGE] == "da"
+    assert runtime.language == "da"
 
 
 async def test_old_version_asks_for_new_setup(hass: HomeAssistant) -> None:

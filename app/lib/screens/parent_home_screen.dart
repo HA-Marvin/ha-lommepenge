@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/l10n.dart';
 import '../models/balance_adjustment.dart';
 import '../models/child.dart';
 import '../models/completion.dart';
@@ -12,35 +13,42 @@ import 'children_screen.dart';
 import 'settings_screen.dart';
 import 'task_edit_screen.dart';
 
-/// Forælder-tilstand: opgaver, børn, godkendelser, overblik/saldo,
-/// historik og indstillinger - samlet i faner. Nye enheder tilføjes i
-/// Home Assistant, og familiens data er med i HA's backups. Kræver at brugeren allerede har
-/// tastet korrekt PIN (håndteret af [PinEntryScreen] før denne skærm
-/// åbnes).
+/// Parent mode: tasks, children, approvals, overview/balance, history and
+/// settings - gathered in tabs. New devices are added in Home Assistant, and
+/// the family's data is part of HA's backups. Requires that the user has
+/// already entered the correct PIN (handled by [PinEntryScreen] before this
+/// screen is opened).
 class ParentHomeScreen extends StatelessWidget {
   const ParentHomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return DefaultTabController(
       length: 6,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Forælder-tilstand'),
+          title: Text(l10n.parentMode),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
-            tooltip: 'Skift til barne-tilstand',
+            tooltip: l10n.switchToChildMode,
             onPressed: () => Navigator.of(context).pop(),
           ),
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
             tabs: [
-              Tab(text: 'Opgaver', icon: Icon(Icons.checklist)),
-              Tab(text: 'Børn', icon: Icon(Icons.family_restroom_outlined)),
-              Tab(text: 'Godkendelser', icon: Icon(Icons.fact_check_outlined)),
-              Tab(text: 'Overblik', icon: Icon(Icons.savings_outlined)),
-              Tab(text: 'Historik', icon: Icon(Icons.history)),
-              Tab(text: 'Indstillinger', icon: Icon(Icons.tune)),
+              Tab(text: l10n.tabTasks, icon: const Icon(Icons.checklist)),
+              Tab(
+                text: l10n.tabChildren,
+                icon: const Icon(Icons.family_restroom_outlined),
+              ),
+              Tab(
+                text: l10n.tabApprovals,
+                icon: const Icon(Icons.fact_check_outlined),
+              ),
+              Tab(text: l10n.tabOverview, icon: const Icon(Icons.savings_outlined)),
+              Tab(text: l10n.tabHistory, icon: const Icon(Icons.history)),
+              Tab(text: l10n.tabSettings, icon: const Icon(Icons.tune)),
             ],
           ),
         ),
@@ -66,21 +74,23 @@ class _TasksTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final tasks = appState.tasks;
+    final l10n = context.l10n;
 
     return Scaffold(
       body: tasks.isEmpty
-          ? const Center(child: Text('Ingen opgaver oprettet endnu.'))
+          ? Center(child: Text(l10n.noTasksYet))
           : ListView.builder(
               itemCount: tasks.length,
               itemBuilder: (context, index) {
                 final task = tasks[index];
                 return ListTile(
                   title: Text(task.title),
-                  subtitle: Text(
-                    '${formatKr(task.amountOre)} · ${task.recurrence.label}'
-                    '${task.dueTime != null ? ' · frist ${task.dueTime}' : ''}'
-                    '${task.showInCalendar ? ' · i kalender' : ''}',
-                  ),
+                  subtitle: Text([
+                    formatAmount(l10n, task.amountOre, appState.currency),
+                    task.recurrence.label(l10n),
+                    if (task.dueTime != null) l10n.deadlineAt(task.dueTime!),
+                    if (task.showInCalendar) l10n.inCalendar,
+                  ].join(' · ')),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -114,16 +124,16 @@ class _TasksTab extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Slet opgave'),
-        content: Text('Er du sikker på at du vil slette "${task.title}"?'),
+        title: Text(ctx.l10n.deleteTask),
+        content: Text(ctx.l10n.confirmDelete(task.title)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annullér'),
+            child: Text(ctx.l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Slet'),
+            child: Text(ctx.l10n.delete),
           ),
         ],
       ),
@@ -140,13 +150,14 @@ class _ApprovalsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
+    final l10n = context.l10n;
     final pending = appState.completions
         .where((c) => c.status == CompletionStatus.pending)
         .toList()
       ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
 
     if (pending.isEmpty) {
-      return const Center(child: Text('Ingen opgaver venter på godkendelse.'));
+      return Center(child: Text(l10n.noPendingApprovals));
     }
 
     final tasksById = {for (final t in appState.tasks) t.id: t};
@@ -157,31 +168,33 @@ class _ApprovalsTab extends StatelessWidget {
       itemBuilder: (context, index) {
         final completion = pending[index];
         final task = tasksById[completion.taskId];
-        final title = task?.title ?? 'Ukendt opgave';
-        final childName = childrenById[completion.childId]?.name ?? 'Ukendt barn';
+        final title = task?.title ?? l10n.unknownTask;
+        final childName =
+            childrenById[completion.childId]?.name ?? l10n.unknownChild;
 
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: ListTile(
             title: Text(title),
-            subtitle: Text(
-              '$childName · ${formatKr(completion.amountAtCompletionOre)} · '
-              '${_formatDateTime(completion.completedAt)}'
-              '${completion.late ? ' · for sent' : ''}',
-            ),
+            subtitle: Text([
+              childName,
+              formatAmount(l10n, completion.amountAtCompletionOre, appState.currency),
+              formatDateTime(l10n, completion.completedAt),
+              if (completion.late) l10n.late,
+            ].join(' · ')),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
                   icon: const Icon(Icons.close, color: Colors.red),
-                  tooltip: 'Afvis',
+                  tooltip: l10n.reject,
                   onPressed: () => context
                       .read<AppState>()
                       .rejectCompletion(completion.id),
                 ),
                 IconButton(
                   icon: const Icon(Icons.check, color: Colors.green),
-                  tooltip: 'Godkend',
+                  tooltip: l10n.approve,
                   onPressed: () => context
                       .read<AppState>()
                       .approveCompletion(completion.id),
@@ -192,12 +205,6 @@ class _ApprovalsTab extends StatelessWidget {
         );
       },
     );
-  }
-
-  String _formatDateTime(DateTime d) {
-    final hh = d.hour.toString().padLeft(2, '0');
-    final mm = d.minute.toString().padLeft(2, '0');
-    return '${d.day}/${d.month}/${d.year} kl. $hh:$mm';
   }
 }
 
@@ -219,9 +226,9 @@ class _OverviewTab extends StatelessWidget {
         const SizedBox(height: 12),
         OutlinedButton.icon(
           icon: const Icon(Icons.tune),
-          label: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('Justér saldo'),
+          label: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(context.l10n.adjustBalance),
           ),
           onPressed: children.isEmpty
               ? null
@@ -252,23 +259,22 @@ class _OverviewTab extends StatelessWidget {
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Justér saldo'),
+          title: Text(ctx.l10n.adjustBalance),
           content: Form(
             key: formKey,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Brug dette til at rette en forkert saldo, fx efter en '
-                  'geninstallation. Beløbet kan være negativt.',
+                  ctx.l10n.adjustBalanceHelp,
                   style: Theme.of(ctx).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   value: selectedChildId,
-                  decoration: const InputDecoration(
-                    labelText: 'Barn',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: ctx.l10n.child,
+                    border: const OutlineInputBorder(),
                   ),
                   items: [
                     for (final child in children)
@@ -287,10 +293,10 @@ class _OverviewTab extends StatelessWidget {
                 TextFormField(
                   controller: amountController,
                   autofocus: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Beløb (kr, +/-)',
-                    border: OutlineInputBorder(),
-                    suffixText: 'kr',
+                  decoration: InputDecoration(
+                    labelText: ctx.l10n.amountSigned(appState.currency),
+                    border: const OutlineInputBorder(),
+                    suffixText: appState.currency,
                   ),
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
@@ -302,7 +308,7 @@ class _OverviewTab extends StatelessWidget {
                   validator: (value) {
                     final parsed = parseKrToOre(value ?? '');
                     if (parsed == null || parsed == 0) {
-                      return 'Angiv et beløb forskelligt fra 0.';
+                      return ctx.l10n.amountNonZero;
                     }
                     return null;
                   },
@@ -310,13 +316,13 @@ class _OverviewTab extends StatelessWidget {
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: noteController,
-                  decoration: const InputDecoration(
-                    labelText: 'Begrundelse',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: ctx.l10n.reason,
+                    border: const OutlineInputBorder(),
                   ),
                   maxLines: 2,
                   validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'Begrundelse er påkrævet.'
+                      ? ctx.l10n.reasonRequired
                       : null,
                 ),
               ],
@@ -325,7 +331,7 @@ class _OverviewTab extends StatelessWidget {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Annullér'),
+              child: Text(ctx.l10n.cancel),
             ),
             FilledButton(
               onPressed: () {
@@ -333,7 +339,7 @@ class _OverviewTab extends StatelessWidget {
                   Navigator.of(ctx).pop(true);
                 }
               },
-              child: const Text('Gem'),
+              child: Text(ctx.l10n.save),
             ),
           ],
         ),
@@ -350,8 +356,15 @@ class _OverviewTab extends StatelessWidget {
           childId: selectedChildId,
         );
         if (context.mounted) {
+          final l10n = context.l10n;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Saldo justeret med ${formatKr(amountOre)}.')),
+            SnackBar(
+              content: Text(
+                l10n.balanceAdjustedBy(
+                  formatAmount(l10n, amountOre, appState.currency),
+                ),
+              ),
+            ),
           );
         }
       } catch (e) {
@@ -371,6 +384,7 @@ class _ChildOverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final balance = appState.currentBalanceOreFor(child.id);
     final paidOut = appState.settings.paidOutOreFor(child.id);
 
@@ -387,23 +401,23 @@ class _ChildOverviewCard extends StatelessWidget {
                   ),
             ),
             const SizedBox(height: 12),
-            Text('Optjent, ikke udbetalt',
+            Text(l10n.earnedNotPaidOut,
                 style: Theme.of(context).textTheme.titleSmall),
             Text(
-              formatKr(balance),
+              formatAmount(l10n, balance, appState.currency),
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 12),
-            Text('Udbetalt i alt',
+            Text(l10n.paidOutTotal,
                 style: Theme.of(context).textTheme.titleSmall),
             Text(
-              formatKr(paidOut),
+              formatAmount(l10n, paidOut, appState.currency),
               style: Theme.of(context).textTheme.bodyLarge,
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
               icon: const Icon(Icons.payments_outlined),
-              label: const Text('Marker som udbetalt'),
+              label: Text(l10n.markAsPaidOut),
               onPressed: balance <= 0
                   ? null
                   : () => _confirmPayout(context, child),
@@ -415,29 +429,30 @@ class _ChildOverviewCard extends StatelessWidget {
   }
 }
 
-/// Bekræfter og udfører en udbetaling for ét bestemt barn. Et top-level
-/// funktion (ikke en instans-metode) da den ikke bruger nogen
-/// instans-tilstand, og bruges fra `_ChildOverviewCard`'s knap pr. barn.
+/// Confirms and performs a payout for one specific child. A top-level
+/// function (not an instance method) as it uses no instance state, and is
+/// used from `_ChildOverviewCard`'s button per child.
 Future<void> _confirmPayout(BuildContext context, Child child) async {
   final appState = context.read<AppState>();
   final balance = appState.currentBalanceOreFor(child.id);
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Marker som udbetalt'),
+      title: Text(ctx.l10n.markAsPaidOut),
       content: Text(
-        'Du er ved at markere ${formatKr(balance)} som udbetalt til '
-        '${child.name}. Denne saldo nulstilles herefter til 0 kr. '
-        'Fortsæt?',
+        ctx.l10n.confirmPayout(
+          formatAmount(ctx.l10n, balance, appState.currency),
+          child.name,
+        ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
-          child: const Text('Annullér'),
+          child: Text(ctx.l10n.cancel),
         ),
         FilledButton(
           onPressed: () => Navigator.of(ctx).pop(true),
-          child: const Text('Ja, udbetal'),
+          child: Text(ctx.l10n.yesPayOut),
         ),
       ],
     ),
@@ -447,8 +462,8 @@ Future<void> _confirmPayout(BuildContext context, Child child) async {
   }
 }
 
-/// Fælles type til at kunne sortere completions og saldo-justeringer
-/// interleaved efter dato i historik-fanen.
+/// Common type to be able to sort completions and balance adjustments
+/// interleaved by date in the history tab.
 class _HistoryEntry {
   final DateTime date;
   final Widget tile;
@@ -461,13 +476,14 @@ class _HistoryTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
+    final l10n = context.l10n;
     final approved = appState.completions
         .where((c) => c.status == CompletionStatus.approved)
         .toList();
     final adjustments = appState.balanceAdjustments;
 
     if (approved.isEmpty && adjustments.isEmpty) {
-      return const Center(child: Text('Ingen fuldførte opgaver endnu.'));
+      return Center(child: Text(l10n.noCompletedTasksYet));
     }
 
     final tasksById = {for (final t in appState.tasks) t.id: t};
@@ -479,12 +495,18 @@ class _HistoryTab extends StatelessWidget {
           date: completion.completedAt,
           tile: ListTile(
             leading: const Icon(Icons.check_circle, color: Colors.green),
-            title: Text(tasksById[completion.taskId]?.title ?? 'Ukendt opgave'),
+            title: Text(tasksById[completion.taskId]?.title ?? l10n.unknownTask),
             subtitle: Text(
-              '${childrenById[completion.childId]?.name ?? 'Ukendt barn'} · '
-              '${_formatDate(completion.completedAt)}',
+              '${childrenById[completion.childId]?.name ?? l10n.unknownChild} · '
+              '${formatDate(l10n, completion.completedAt)}',
             ),
-            trailing: Text(formatKr(completion.amountAtCompletionOre)),
+            trailing: Text(
+              formatAmount(
+                l10n,
+                completion.amountAtCompletionOre,
+                appState.currency,
+              ),
+            ),
           ),
         ),
       for (final adjustment in adjustments)
@@ -492,7 +514,8 @@ class _HistoryTab extends StatelessWidget {
           date: adjustment.createdAt,
           tile: _AdjustmentTile(
             adjustment: adjustment,
-            childName: childrenById[adjustment.childId]?.name ?? 'Ukendt barn',
+            childName:
+                childrenById[adjustment.childId]?.name ?? l10n.unknownChild,
           ),
         ),
     ]..sort((a, b) => b.date.compareTo(a.date));
@@ -502,8 +525,6 @@ class _HistoryTab extends StatelessWidget {
       itemBuilder: (context, index) => entries[index].tile,
     );
   }
-
-  String _formatDate(DateTime d) => '${d.day}/${d.month}/${d.year}';
 }
 
 class _AdjustmentTile extends StatelessWidget {
@@ -513,16 +534,17 @@ class _AdjustmentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final currency = context.watch<AppState>().currency;
     final isPositive = adjustment.amountOre >= 0;
     final sign = isPositive ? '+' : '';
     final color = isPositive ? Colors.green[700] : Colors.red[700];
-    final d = adjustment.createdAt;
     return ListTile(
       leading: const Icon(Icons.tune, color: Colors.blueGrey),
-      title: Text('Saldo-justering: ${adjustment.note}'),
-      subtitle: Text('$childName · ${d.day}/${d.month}/${d.year}'),
+      title: Text(l10n.balanceAdjustment(adjustment.note)),
+      subtitle: Text('$childName · ${formatDate(l10n, adjustment.createdAt)}'),
       trailing: Text(
-        '$sign${formatKr(adjustment.amountOre)}',
+        '$sign${formatAmount(l10n, adjustment.amountOre, currency)}',
         style: TextStyle(color: color, fontWeight: FontWeight.bold),
       ),
     );

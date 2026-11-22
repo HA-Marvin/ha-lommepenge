@@ -1,55 +1,72 @@
-# Lommepenge-app
+# Lommepenge app
 
-Familiens app til opgaver og lommepenge. Forældre opretter opgaver med en
-kroneværdi, børnene markerer dem udført, og forældrene godkender – i
-appen eller direkte fra en notifikation i Home Assistant.
+The family's app for tasks and pocket money. Parents create tasks with an
+amount, the children mark them as done, and the parents approve – in the app
+or directly from a notification in Home Assistant.
 
-**Home Assistant er serveren.** Integrationen i samme repo
-(`custom_components/lommepenge`) gemmer familiens data, regner frister og
-spærring, og er det eneste sted appen taler med. Appen har ingen egen server og intet internet-krav – kun
-hjemmenettet.
+**Home Assistant is the server.** The integration in the same repository
+(`custom_components/lommepenge`) stores the family's data, calculates
+deadlines and restrictions, and is the only place the app talks to. The app
+has no server of its own and needs no internet – only the home network.
 
-## Roller
+## Languages
 
-Rollen vælges i Home Assistant, når enheden tilføjes, og kan ikke ændres
-på enheden selv:
+English (default), Danish, German, Spanish and French. The app asks for the
+language on first start (English is preselected); it can be changed later
+under *Settings* in parent mode, on the connect screen and on the child's
+tablet. The phone's own language is never used. The app sends its language
+to Home Assistant, so error messages from HA come back in the same language.
 
-| Rolle | Visning | Forælder-delen |
+Amounts are shown in the currency chosen in Home Assistant (free text, `DKK`
+by default).
+
+The texts are in `lib/l10n/app_<language>.arb`; `app_en.arb` is the template.
+Flutter generates `lib/l10n/app_localizations*.dart` from them
+(`flutter gen-l10n`, also run by `flutter pub get`).
+
+## Roles
+
+The role is chosen in Home Assistant when the device is added, and cannot be
+changed on the device itself:
+
+| Role | View | Parent part |
 | --- | --- | --- |
-| Fælles skærm (fx køleskabet) | Alle børn, én kolonne pr. barn | Låst med familiens PIN |
-| Forælders telefon | Fælles opgaveliste og saldi | Låst med familiens PIN |
-| Barnets tablet | Kun det ene barns opgaver | Findes ikke – HA afviser alt andet end "markér udført" for barnet selv |
+| Family screen (e.g. the fridge) | All children, one column per child | Locked with the family's PIN |
+| Parent's phone | Shared task list and balances | Locked with the family's PIN |
+| Child's tablet | Only that child's tasks | Does not exist – HA refuses anything other than "mark as done" for the child itself |
 
-PIN-koden sættes i Home Assistant. En barne-tablet kan kun forbindes igen
-efter en geninstallation (`allowBackup="false"`).
+The PIN is set in Home Assistant. A child's tablet can only be connected again
+after a reinstall (`allowBackup="false"`).
 
-## Installation på en ny enhed
+## Installing on a new device
 
-1. I Home Assistant: *Lommepenge → Tilføj enhed*. Vælg navn og rolle
-   (og barn). HA viser en QR-kode.
-2. Scan QR-koden med enhedens kamera. Siden fra HA har to knapper:
-   **Hent appen** (APK'en hentes fra HA) og **Åbn appen og forbind**.
-3. Har enheden allerede appen, kan QR-koden også scannes inde i appen.
+1. In Home Assistant: *Lommepenge → Add device*. Choose a name and role (and
+   child). HA shows a code and a link to a page with a QR code.
+2. Install the app (**Download the app** on the page from HA), open it and
+   choose the language.
+3. Enter the code and tap **Connect** – or scan the QR code if the device has
+   a camera. On Android the page also has **Open the app and connect**.
 
-## Opdateringer
+## Updates
 
-App og integration udgives sammen: et tag `vX.Y.Z` bygger en signeret
-APK med GitHub Actions (`.github/workflows/release.yml` i repoets rod) og
-lægger den på releasen sammen med dens SHA-256. Home Assistant henter den
-derfra, og appen viser "Ny version klar". **Opdater** henter APK'en fra HA, tjekker
-SHA-256 og beder Android installere den. Versionskoden er
-`major·10000 + minor·100 + patch`.
+App and integration are released together: a tag `vX.Y.Z` builds a signed
+APK with GitHub Actions (`.github/workflows/release.yml` in the repository
+root) and puts it on the release together with its SHA-256. Home Assistant
+fetches it from there, and the app shows "New version ... is ready".
+**Update** downloads the APK from HA, checks the SHA-256 and asks Android to
+install it. The version code is `major·10000 + minor·100 + patch`.
 
-## Signering
+## Signing
 
-Appen signeres med en fast nøgle (`lommepenge-release.jks`), som ligger
-uden for git sammen med `key.properties`. GitHub Actions får den via
-hemmelighederne `KEYSTORE_BASE64` og `KEYSTORE_PASSWORD`. **Mistes nøglen,
-kan ingen enhed opdateres uden geninstallation** – gem en backup.
+The app is signed with a fixed key (`lommepenge-release.jks`), which is kept
+outside git together with `key.properties`. GitHub Actions gets it via the
+secrets `KEYSTORE_BASE64` and `KEYSTORE_PASSWORD`. **If the key is lost, no
+device can be updated without a reinstall** – keep a backup.
 
-Uden `android/key.properties` bygges med debug-nøglen (til `flutter run`).
+Without `android/key.properties` the build uses the debug key (for
+`flutter run`).
 
-## Udvikling
+## Development
 
 ```bash
 flutter pub get
@@ -57,17 +74,18 @@ flutter test
 flutter build apk --release --target-platform android-arm,android-arm64
 ```
 
-Se `WINDOWS_OPSAETNING.md` for Flutter på Windows.
+See `WINDOWS_SETUP.md` for Flutter on Windows.
 
-## Struktur
+## Structure
 
 ```
 lib/
-  main.dart                  router: forbind → rollens forside
-  providers/app_state.dart   tilstand, sync med HA, offline-kø, opdatering
-  services/ha_client.dart    signerede kald til integrationen
+  main.dart                  router: language → connect → the role's home screen
+  l10n/                      translations (ARB) and helpers (l10n.dart)
+  providers/app_state.dart   state, language, sync with HA, offline queue, updates
+  services/ha_client.dart    signed requests to the integration
   services/native_bridge.dart  links, version, installation (MainActivity.kt)
-  repositories/              lokal kopi af familiens data og samme regler som HA
-  logic/                     tilgængelighed, frister og spærring
+  repositories/              local copy of the family's data and the same rules as HA
+  logic/                     availability, deadlines and restriction
   screens/ widgets/          UI
 ```

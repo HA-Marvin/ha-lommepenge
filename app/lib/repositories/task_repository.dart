@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 
 import '../db/database_helper.dart';
+import '../l10n/l10n.dart';
 import '../logic/follow_up.dart';
 import '../logic/recurrence.dart';
 import '../models/balance_adjustment.dart';
@@ -10,8 +11,9 @@ import '../models/family_settings.dart';
 import '../models/task.dart';
 import '../services/settings_service.dart';
 
-/// Kastes når en handling ikke er gyldig i den nuværende tilstand, fx
-/// at markere en opgave udført mens den allerede venter på godkendelse.
+/// Thrown when an action is not valid in the current state, e.g. marking a
+/// task as done while it is already waiting for approval. [message] is in
+/// the app's language and is shown to the user as it is.
 class RepositoryException implements Exception {
   final String message;
   RepositoryException(this.message);
@@ -19,24 +21,28 @@ class RepositoryException implements Exception {
   String toString() => message;
 }
 
-/// Samler al forretningslogik for opgaver/completions/saldo/børn ét
-/// sted, så både UI'et og sync-laget (server og klient) bruger præcis
-/// den samme logik og dermed ikke kan komme ud af trit med hinanden.
+/// Gathers all business logic for tasks/completions/balance/children in one
+/// place, so the UI and the sync with Home Assistant use exactly the same
+/// logic and cannot get out of step with each other.
 ///
-/// På skærm-enheden ER denne repository's database "sandheden". På
-/// telefonen er den en lokal cache, der bliver overskrevet af
-/// [replaceAllFromState] hver gang der er kontakt til skærmen.
+/// The database is a local copy: actions are applied here right away (so the
+/// app feels fast and works briefly offline) and the copy is overwritten by
+/// [replaceAllFromState] every time Home Assistant answers. HA's integration
+/// has the same rules in `family.py`/`logic.py`.
 class TaskRepository {
   final DatabaseHelper _db;
   final SettingsService settings;
   final Uuid _uuid = const Uuid();
+
+  /// The texts for error messages; set by `AppState` when the language changes.
+  AppLocalizations l10n = l10nFor(defaultLanguage);
 
   TaskRepository({
     DatabaseHelper? databaseHelper,
     required this.settings,
   }) : _db = databaseHelper ?? DatabaseHelper.instance;
 
-  // ---- Læsning -----------------------------------------------------------
+  // ---- Reading -----------------------------------------------------------
 
   Future<List<Task>> getActiveTasks() => _db.getAllTasks(onlyActive: true);
   Future<List<Task>> getAllTasks() => _db.getAllTasks();
@@ -55,27 +61,27 @@ class TaskRepository {
       ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
   }
 
-  /// Opgavens tilgængelighed for ét bestemt barn. Kun completions for
-  /// DETTE barn tælles med - ved en opgave delt mellem flere børn må
-  /// barn A's udførelse/godkendelse ikke blokere barn B's egen,
-  /// uafhængige udførelse af samme opgave.
+  /// The task's availability for one specific child. Only completions for
+  /// THIS child count - for a task shared between several children, child A's
+  /// completion/approval must not block child B's own, independent
+  /// completion of the same task.
   Future<TaskAvailability> availabilityFor(Task task, String childId) async {
     final completions = await _db.getCompletionsForTask(task.id);
     final forChild = completions.where((c) => c.childId == childId).toList();
     return computeAvailability(task, forChild);
   }
 
-  // ---- Børn ----------------------------------------------------------------
+  // ---- Children ------------------------------------------------------------
 
   Future<List<Child>> getAllChildren() => _db.getAllChildren();
 
-  /// Opretter et nyt barn. [id] kan angives eksplicit (bruges af
-  /// [applyAction], så samme id genbruges på tværs af skærm/telefon -
-  /// samme mønster som `create_task`).
+  /// Creates a new child. [id] can be given explicitly (used by
+  /// [applyAction], so the same id is reused across devices - the same
+  /// pattern as `create_task`).
   Future<Child> addChild(String name, {String? id}) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
-      throw RepositoryException('Barnets navn må ikke være tomt.');
+      throw RepositoryException(l10n.errChildNameEmpty);
     }
     final existing = await _db.getAllChildren();
     final child = Child(
@@ -91,33 +97,33 @@ class TaskRepository {
   Future<void> renameChild(String id, String newName) async {
     final trimmed = newName.trim();
     if (trimmed.isEmpty) {
-      throw RepositoryException('Barnets navn må ikke være tomt.');
+      throw RepositoryException(l10n.errChildNameEmpty);
     }
     final children = await _db.getAllChildren();
     final matches = children.where((c) => c.id == id);
     if (matches.isEmpty) {
-      throw RepositoryException('Barnet findes ikke længere.');
+      throw RepositoryException(l10n.errChildNotFound);
     }
     await _db.updateChild(matches.first.copyWith(name: trimmed));
   }
 
-  /// Sletter et barn. Det sidste barn kan også slettes - familien kan
-  /// godt stå uden børn, indtil forældrene opretter nye.
+  /// Deletes a child. The last child can also be deleted - the family can
+  /// be without children until the parents create new ones.
   Future<void> deleteChild(String id) async {
     final children = await _db.getAllChildren();
     if (!children.any((c) => c.id == id)) {
-      throw RepositoryException('Barnet findes ikke længere.');
+      throw RepositoryException(l10n.errChildNotFound);
     }
     await _db.deleteChild(id);
   }
 
-  /// Hvilke børns id'er en opgave reelt gælder for lige nu.
-  /// `null`/tom [Task.assignedChildIds] betyder "alle børn" - løses her
-  /// DYNAMISK op mod familiens aktuelle børneliste, så et barn tilføjet
-  /// EFTER opgaven blev oprettet automatisk er inkluderet. Eksplicit
-  /// angivne id'er filtreres til kun dem der stadig findes (et barn kan
-  /// være slettet siden opgaven blev tildelt) - døde id'er smides stille
-  /// væk i stedet for at crashe.
+  /// Which children's ids a task actually applies to right now.
+  /// `null`/empty [Task.assignedChildIds] means "all children" - resolved
+  /// here DYNAMICALLY against the family's current list of children, so a
+  /// child added AFTER the task was created is automatically included.
+  /// Explicitly given ids are filtered to only those that still exist (a
+  /// child may have been deleted since the task was assigned) - dead ids are
+  /// silently dropped instead of crashing.
   Future<List<String>> resolvedChildIdsForTask(Task task) async {
     final children = await _db.getAllChildren();
     final assigned = task.assignedChildIds;
@@ -128,9 +134,9 @@ class TaskRepository {
     return assigned.where(existingIds.contains).toList();
   }
 
-  // ---- Saldo (pr. barn) -----------------------------------------------------
+  // ---- Balance (per child) ---------------------------------------------------
 
-  /// Sum af alle godkendte completions nogensinde (øre) for ét barn.
+  /// Sum of all approved completions ever (øre) for one child.
   Future<int> totalEarnedOre({required String childId}) async {
     final approved = await getApprovedCompletions();
     return approved
@@ -138,8 +144,8 @@ class TaskRepository {
         .fold<int>(0, (sum, c) => sum + c.amountAtCompletionOre);
   }
 
-  /// Sum af alle manuelle saldo-justeringer nogensinde (øre, kan være
-  /// negativ) for ét barn.
+  /// Sum of all manual balance adjustments ever (øre, can be negative) for
+  /// one child.
   Future<int> totalAdjustmentsOre({required String childId}) async {
     final adjustments = await getAllBalanceAdjustments();
     return adjustments
@@ -147,8 +153,8 @@ class TaskRepository {
         .fold<int>(0, (sum, a) => sum + a.amountOre);
   }
 
-  /// Nuværende optjent, ikke-udbetalt saldo (øre) for ét barn, inkl.
-  /// manuelle justeringer.
+  /// Current earned, not paid out balance (øre) for one child, including
+  /// manual adjustments.
   Future<int> currentBalanceOre({required String childId}) async {
     final earned = await totalEarnedOre(childId: childId);
     final paidOut = settings.paidOutOreFor(childId);
@@ -157,7 +163,7 @@ class TaskRepository {
     return balance < 0 ? 0 : balance;
   }
 
-  /// Sum af godkendte completions de sidste 7 dage (øre) for ét barn.
+  /// Sum of approved completions in the last 7 days (øre) for one child.
   Future<int> earnedThisWeekOre({
     required String childId,
     DateTime? now,
@@ -170,8 +176,8 @@ class TaskRepository {
         .fold<int>(0, (sum, c) => sum + c.amountAtCompletionOre);
   }
 
-  /// Antal opgaver godkendt de sidste 7 dage for ét barn - bruges til den
-  /// simple fremskridtsvisning i barne-tilstand.
+  /// Number of tasks approved in the last 7 days for one child - used for
+  /// the simple progress display in child mode.
   Future<int> completedCountThisWeek({
     required String childId,
     DateTime? now,
@@ -184,8 +190,8 @@ class TaskRepository {
         .length;
   }
 
-  /// Opretter og gemmer en manuel saldo-justering for ét barn.
-  /// [amountOre] kan være negativ; [note] er en obligatorisk begrundelse.
+  /// Creates and stores a manual balance adjustment for one child.
+  /// [amountOre] can be negative; [note] is a mandatory reason.
   Future<BalanceAdjustment> addBalanceAdjustment({
     required int amountOre,
     required String note,
@@ -194,7 +200,7 @@ class TaskRepository {
     DateTime? createdAt,
   }) async {
     if (note.trim().isEmpty) {
-      throw RepositoryException('En saldo-justering skal have en note.');
+      throw RepositoryException(l10n.errAdjustmentNote);
     }
     final adjustment = BalanceAdjustment(
       id: id ?? _uuid.v4(),
@@ -207,7 +213,7 @@ class TaskRepository {
     return adjustment;
   }
 
-  // ---- Skrivning (høj-niveau, bruges direkte af UI) -----------------------
+  // ---- Writing (high level, used directly by the UI) -----------------------
 
   Future<Task> createTask({
     required String title,
@@ -259,7 +265,7 @@ class TaskRepository {
   }) async {
     final existing = await _db.getTask(id);
     if (existing == null) {
-      throw RepositoryException('Opgaven findes ikke længere.');
+      throw RepositoryException(l10n.errTaskNotFound);
     }
     final updated = existing.copyWith(
       title: title,
@@ -269,8 +275,8 @@ class TaskRepository {
       recurrence: recurrence,
       mandatory: mandatory,
       activeWeekdays: recurrence == Recurrence.once ? null : activeWeekdays,
-      // 'Engang' skal altid ende med activeWeekdays == null, uanset hvad
-      // der evt. var valgt tidligere, eller hvad kaldet ellers beder om.
+      // 'Once' must always end with activeWeekdays == null, regardless of
+      // what may have been chosen before, or what the call otherwise asks for.
       clearActiveWeekdays:
           recurrence == Recurrence.once ? true : clearActiveWeekdays,
       assignedChildIds: assignedChildIds,
@@ -286,9 +292,9 @@ class TaskRepository {
 
   Future<void> deleteTask(String id) => _db.deactivateTask(id);
 
-  /// Barnet markerer en opgave udført. Opretter en 'pending' completion.
-  /// Kaster [RepositoryException] hvis opgaven ikke er tilgængelig lige
-  /// nu, eller hvis opgaven slet ikke er tildelt dette barn.
+  /// The child marks a task as done. Creates a 'pending' completion.
+  /// Throws [RepositoryException] if the task is not available right now, or
+  /// if the task is not assigned to this child at all.
   Future<Completion> completeTask(
     String taskId, {
     required String childId,
@@ -297,23 +303,21 @@ class TaskRepository {
   }) async {
     final task = await _db.getTask(taskId);
     if (task == null || !task.active) {
-      throw RepositoryException('Opgaven findes ikke længere.');
+      throw RepositoryException(l10n.errTaskNotFound);
     }
     final resolvedChildIds = await resolvedChildIdsForTask(task);
     if (!resolvedChildIds.contains(childId)) {
-      throw RepositoryException('Opgaven er ikke tildelt dette barn.');
+      throw RepositoryException(l10n.errTaskNotAssigned);
     }
     final existingForTask = await _db.getCompletionsForTask(taskId);
-    // Kun completions for DETTE barn må påvirke tilgængeligheden - se
+    // Only completions for THIS child may affect the availability - see
     // [availabilityFor].
     final existingForChild =
         existingForTask.where((c) => c.childId == childId).toList();
     final availability =
         computeAvailability(task, existingForChild, now: completedAt);
     if (availability != TaskAvailability.available) {
-      throw RepositoryException(
-        'Opgaven kan ikke markeres udført lige nu.',
-      );
+      throw RepositoryException(l10n.errTaskNotAvailable);
     }
     final at = completedAt ?? DateTime.now();
     final completion = Completion(
@@ -329,14 +333,14 @@ class TaskRepository {
     return completion;
   }
 
-  /// Forælder godkender en 'pending' completion - tæller nu med i saldoen.
+  /// A parent approves a 'pending' completion - it now counts in the balance.
   Future<void> approveCompletion(String completionId, {DateTime? approvedAt}) async {
     final completion = await _db.getCompletion(completionId);
     if (completion == null) {
-      throw RepositoryException('Udførelsen findes ikke.');
+      throw RepositoryException(l10n.errCompletionNotFound);
     }
     if (completion.status != CompletionStatus.pending) {
-      throw RepositoryException('Udførelsen er allerede behandlet.');
+      throw RepositoryException(l10n.errCompletionHandled);
     }
     await _db.updateCompletion(
       completion.copyWith(
@@ -346,32 +350,32 @@ class TaskRepository {
     );
   }
 
-  /// Forælder afviser en 'pending' completion - tæller ikke med.
+  /// A parent rejects a 'pending' completion - it does not count.
   Future<void> rejectCompletion(String completionId) async {
     final completion = await _db.getCompletion(completionId);
     if (completion == null) {
-      throw RepositoryException('Udførelsen findes ikke.');
+      throw RepositoryException(l10n.errCompletionNotFound);
     }
     if (completion.status != CompletionStatus.pending) {
-      throw RepositoryException('Udførelsen er allerede behandlet.');
+      throw RepositoryException(l10n.errCompletionHandled);
     }
     await _db.updateCompletion(
       completion.copyWith(status: CompletionStatus.rejected),
     );
   }
 
-  /// Flytter hele det ene barns aktuelle saldo til "udbetalt" og
-  /// nulstiller dets optjente (ikke-udbetalte) saldo til 0. Påvirker
-  /// ikke de øvrige børns saldi.
+  /// Moves the one child's entire current balance to "paid out" and resets
+  /// its earned (not paid out) balance to 0. Does not affect the other
+  /// children's balances.
   Future<void> markPaidOut({required String childId}) async {
     final earned = await totalEarnedOre(childId: childId);
     final adjustments = await totalAdjustmentsOre(childId: childId);
     await settings.setPaidOutOreFor(childId, earned + adjustments);
   }
 
-  // ---- Opfølgning og indstillinger -----------------------------------------
+  // ---- Follow-up and settings -------------------------------------------------
 
-  /// Opfølgnings-status (forsinket/spærret) for hvert barn på [now].
+  /// Follow-up status (overdue/restricted) for every child at [now].
   Future<Map<String, ChildFollowUp>> followUpForAll({DateTime? now}) async {
     final at = now ?? DateTime.now();
     final tasks = await getActiveTasks();
@@ -399,11 +403,11 @@ class TaskRepository {
     return result;
   }
 
-  /// Forælder ophæver barnets spærring for resten af [day].
+  /// A parent lifts the child's restriction for the rest of [day].
   Future<void> suspendRestriction(String childId, {DateTime? day}) async {
     final children = await getAllChildren();
     if (!children.any((c) => c.id == childId)) {
-      throw RepositoryException('Barnet findes ikke længere.');
+      throw RepositoryException(l10n.errChildNotFound);
     }
     final suspensions = Map<String, String>.from(
       settings.restrictionSuspensions,
@@ -412,32 +416,40 @@ class TaskRepository {
     await settings.setRestrictionSuspensions(suspensions);
   }
 
-  /// Sætter én familie-indstilling (se [FamilySettings.keys]).
+  /// Sets one family setting (see [FamilySettings.keys]).
   Future<void> setFamilySetting(String key, Object? value) async {
     try {
       await settings.setFamilySettings(
         settings.familySettings.withValue(key, value),
       );
-    } on ArgumentError catch (e) {
-      throw RepositoryException('${e.message}');
+    } on InvalidSetting catch (e) {
+      final min = e.min;
+      final max = e.max;
+      throw RepositoryException(
+        min != null && max != null
+            ? l10n.errSettingRange(e.key, '$min', '$max', '${e.value}')
+            : FamilySettings.keys.contains(e.key)
+                ? l10n.errInvalidTime(e.key, '${e.value}')
+                : l10n.errUnknownSetting(e.key),
+      );
     }
   }
 
-  // ---- Engangs-migration (Feature: flere børn) -----------------------------
+  // ---- One-time migration (feature: several children) -------------------------
 
-  /// Engangs-migration: indtil nu var [SettingsService.totalPaidOutOre]
-  /// ét globalt udbetalt-beløb for hele familien (dengang appen kun
-  /// understøttede ét barn). Nu er udbetalt-beløb pr. barn (se
-  /// [SettingsService.paidOutOreFor]). Denne migration overfører den
-  /// gamle globale værdi til det ene barn, PRÆCIS én gang, og kun når
-  /// det giver mening: det nye per-barn-kort er stadig helt tomt, den
-  /// gamle værdi er > 0, og der findes præcis ét barn (dvs. dette er
-  /// reelt en opgradering fra "kun ét barn"-versionen af appen - findes
-  /// der allerede flere børn, er der intet entydigt barn at overføre
-  /// den gamle værdi til, og migrationen springes over).
+  /// One-time migration: until then [SettingsService.totalPaidOutOre] was one
+  /// global paid-out amount for the whole family (when the app only supported
+  /// one child). Paid-out amounts are now per child (see
+  /// [SettingsService.paidOutOreFor]). This migration moves the old global
+  /// value to the one child, EXACTLY once, and only when it makes sense: the
+  /// new per-child map is still completely empty, the old value is > 0, and
+  /// there is exactly one child (i.e. this really is an upgrade from the "one
+  /// child only" version of the app - if there are already several children,
+  /// there is no unambiguous child to move the old value to, and the migration
+  /// is skipped).
   ///
-  /// Skal kaldes tidligt i AppState.initialize() - FØR resten af appen
-  /// begynder at læse/skrive per-barn-saldi.
+  /// Must be called early in AppState.initialize() - BEFORE the rest of the
+  /// app starts reading/writing per-child balances.
   Future<void> migrateLegacyPaidOutIfNeeded() async {
     final legacy = settings.totalPaidOutOre;
     if (legacy <= 0) return;
@@ -447,11 +459,11 @@ class TaskRepository {
     await settings.setPaidOutOreFor(children.first.id, legacy);
   }
 
-  // ---- Samlet handlings-API (bruges af sync: både server og klient) ------
+  // ---- The common action API (the same actions as HA's integration) ---------
 
-  /// Anvender én sync-handling på den lokale database. Bruges både
-  /// direkte af UI'et (så al skrivning går ét sted igennem) og af
-  /// [SyncServer] når skærmen modtager en handling fra telefonen.
+  /// Applies one action to the local database. All writing from the UI goes
+  /// through here (and is then sent to Home Assistant, which applies the same
+  /// action with the same rules).
   Future<void> applyAction(Map<String, dynamic> action) async {
     final type = action['type'] as String?;
     final payload = (action['payload'] as Map?)?.cast<String, dynamic>() ?? {};
@@ -481,13 +493,12 @@ class TaskRepository {
         return;
 
       case 'update_task':
-        // Skelner bevidst mellem "nøglen mangler helt" (en gammel
-        // enhed uden denne opdatering, der aldrig har hørt om
-        // activeWeekdays/assignedChildIds - behold den eksisterende
-        // ugeplan/tildeling uændret, samme bagudkompatible mønster som
-        // 'mandatory') og "nøglen er eksplicit sat til null" (en
-        // opdateret enhed der aktivt beder om at nulstille til "alle
-        // dage"/"alle børn").
+        // Deliberately distinguishes between "the key is missing entirely"
+        // (an old sender that has never heard of activeWeekdays/
+        // assignedChildIds - keep the existing week plan/assignment
+        // unchanged, the same backwards-compatible pattern as 'mandatory')
+        // and "the key is explicitly set to null" (an updated sender that
+        // actively asks to reset to "every day"/"all children").
         final hasWeekdaysKey = payload.containsKey('activeWeekdays');
         final hasChildIdsKey = payload.containsKey('assignedChildIds');
         final hasStartKey = payload.containsKey('startTime');
@@ -522,9 +533,7 @@ class TaskRepository {
       case 'complete_task':
         final completeChildId = payload['childId'] as String?;
         if (completeChildId == null || completeChildId.isEmpty) {
-          throw RepositoryException(
-            'Handlingen mangler oplysning om hvilket barn (childId).',
-          );
+          throw RepositoryException(l10n.errMissingChildId);
         }
         await completeTask(
           payload['taskId'] as String,
@@ -552,9 +561,7 @@ class TaskRepository {
       case 'mark_paid_out':
         final payoutChildId = payload['childId'] as String?;
         if (payoutChildId == null || payoutChildId.isEmpty) {
-          throw RepositoryException(
-            'Handlingen mangler oplysning om hvilket barn (childId).',
-          );
+          throw RepositoryException(l10n.errMissingChildId);
         }
         await markPaidOut(childId: payoutChildId);
         return;
@@ -562,9 +569,7 @@ class TaskRepository {
       case 'adjust_balance':
         final adjustChildId = payload['childId'] as String?;
         if (adjustChildId == null || adjustChildId.isEmpty) {
-          throw RepositoryException(
-            'Handlingen mangler oplysning om hvilket barn (childId).',
-          );
+          throw RepositoryException(l10n.errMissingChildId);
         }
         await addBalanceAdjustment(
           id: payload['id'] as String?,
@@ -580,7 +585,7 @@ class TaskRepository {
       case 'add_child':
         final name = payload['name'] as String?;
         if (name == null || name.trim().isEmpty) {
-          throw RepositoryException('Handlingen mangler et navn.');
+          throw RepositoryException(l10n.errMissingName);
         }
         await addChild(name, id: payload['id'] as String?);
         return;
@@ -589,7 +594,7 @@ class TaskRepository {
         final renameId = payload['id'] as String?;
         final newName = payload['name'] as String?;
         if (renameId == null || newName == null || newName.trim().isEmpty) {
-          throw RepositoryException('Handlingen mangler id eller navn.');
+          throw RepositoryException(l10n.errMissingIdOrName);
         }
         await renameChild(renameId, newName);
         return;
@@ -597,7 +602,7 @@ class TaskRepository {
       case 'delete_child':
         final deleteId = payload['id'] as String?;
         if (deleteId == null || deleteId.isEmpty) {
-          throw RepositoryException('Handlingen mangler et id.');
+          throw RepositoryException(l10n.errMissingId);
         }
         await deleteChild(deleteId);
         return;
@@ -605,9 +610,7 @@ class TaskRepository {
       case 'suspend_restriction':
         final suspendChildId = payload['childId'] as String?;
         if (suspendChildId == null || suspendChildId.isEmpty) {
-          throw RepositoryException(
-            'Handlingen mangler oplysning om hvilket barn (childId).',
-          );
+          throw RepositoryException(l10n.errMissingChildId);
         }
         await suspendRestriction(suspendChildId);
         return;
@@ -615,20 +618,20 @@ class TaskRepository {
       case 'set_setting':
         final key = payload['key'] as String?;
         if (key == null) {
-          throw RepositoryException('Handlingen mangler en indstilling.');
+          throw RepositoryException(l10n.errMissingSetting);
         }
         await setFamilySetting(key, payload['value']);
         return;
 
       default:
-        throw RepositoryException('Ukendt handling: $type');
+        throw RepositoryException(l10n.errUnknownAction('$type'));
     }
   }
 
-  // ---- Fuld state (bruges af sync) ----------------------------------------
+  // ---- Full state ---------------------------------------------------------------
 
-  /// Bygger den fulde state-dump som skærmen svarer med på GET /state og
-  /// efter hver POST /action.
+  /// The full local state in the sync format (the same shape as HA's
+  /// `state_json`).
   Future<Map<String, dynamic>> getStateJson() async {
     final tasks = await _db.getAllTasks();
     final completions = await _db.getAllCompletions();
@@ -649,9 +652,9 @@ class TaskRepository {
     };
   }
 
-  /// Overskriver hele den lokale database med state modtaget fra skærmen.
-  /// Bruges kun på telefonen - en simpel og robust "full replace"-strategi
-  /// frem for finkornet konflikthåndtering, jf. MVP-scope.
+  /// Overwrites the whole local database with the state received from Home
+  /// Assistant - a simple and robust "full replace" strategy rather than
+  /// fine-grained conflict handling.
   Future<void> replaceAllFromState(Map<String, dynamic> state) async {
     final tasksJson = (state['tasks'] as List).cast<Map>();
     final completionsJson = (state['completions'] as List).cast<Map>();
@@ -659,15 +662,14 @@ class TaskRepository {
     await _db.clearCompletions();
     await _db.clearTasks();
 
-    // Bagudkompatibelt, samme mønster som 'balanceAdjustments' nedenfor:
-    // en gammel enhed uden denne opdatering sender ikke 'children' med i
-    // sin state - spring da over og lad de(t) eksisterende barn/børn på
-    // denne enhed stå urørt, i stedet for at slette dem uden mulighed
-    // for at genskabe dem.
+    // Backwards compatible, the same pattern as 'balanceAdjustments' below:
+    // an old sender without this update does not send 'children' in its state
+    // - then skip it and leave the existing child/children on this device
+    // untouched, instead of deleting them with no way to recreate them.
     //
-    // Børnene genskabes FØR tasks/completions/balance-justeringer
-    // nedenfor, så fremmednøglerne (assignedChildIds/childId) i den data
-    // der genindlæses rent faktisk peger på børn der findes.
+    // The children are recreated BEFORE tasks/completions/balance adjustments
+    // below, so the foreign keys (assignedChildIds/childId) in the reloaded
+    // data actually point to children that exist.
     if (state['children'] != null) {
       final childrenJson = (state['children'] as List).cast<Map>();
       await _db.clearChildren();
@@ -685,10 +687,9 @@ class TaskRepository {
       );
     }
 
-    // Bagudkompatibelt: en gammel enhed uden denne opdatering sender
-    // ikke 'balanceAdjustments' med i sin state - spring da blot over i
-    // stedet for at fejle, og lad de eksisterende justeringer (hvis
-    // nogen) stå urørt.
+    // Backwards compatible: an old sender without this update does not send
+    // 'balanceAdjustments' in its state - then simply skip it instead of
+    // failing, and leave the existing adjustments (if any) untouched.
     if (state['balanceAdjustments'] != null) {
       final adjustmentsJson =
           (state['balanceAdjustments'] as List).cast<Map>();
@@ -704,8 +705,8 @@ class TaskRepository {
       await settings.setTotalPaidOutOre(state['totalPaidOutOre'] as int);
     }
 
-    // Bagudkompatibelt, samme mønster som ovenfor: en gammel enhed
-    // sender ikke 'paidOutOreByChild' med endnu.
+    // Backwards compatible, the same pattern as above: an old sender does not
+    // send 'paidOutOreByChild' yet.
     if (state['paidOutOreByChild'] != null) {
       final raw = (state['paidOutOreByChild'] as Map).cast<String, dynamic>();
       await settings.setPaidOutOreByChild(
@@ -713,7 +714,7 @@ class TaskRepository {
       );
     }
 
-    // Samme bagudkompatible mønster: en ældre skærm sender ikke disse.
+    // The same backwards-compatible pattern: an older sender does not send these.
     if (state['familySettings'] != null) {
       await settings.setFamilySettings(FamilySettings.fromJson(
         (state['familySettings'] as Map).cast<String, dynamic>(),

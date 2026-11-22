@@ -1,29 +1,41 @@
 blueprint:
-  name: Lommepenge – godkendelse via notifikation
+  name: Lommepenge – approve via notification
   description: >
-    Sender en notifikation med knapperne Godkend/Afvis til forældrenes
-    telefoner, når et barn har markeret en opgave udført. Kun tryk fra de
-    valgte forældre bliver udført. Når opgaven er afgjort (her eller i
-    appen), forsvinder notifikationen hos alle.
+    Sends a notification with Approve/Reject buttons to the parents' phones
+    when a child has marked a task as done. Only taps from the selected
+    parents are carried out. When the task is decided (here or in the app),
+    the notification disappears for everyone. The notification text comes
+    from the integration in the language chosen for it; the button labels
+    can be changed below.
   domain: automation
-  source_url: https://raw.githubusercontent.com/HA-Marvin/ha-lommepenge/main/blueprints/automation/lommepenge/godkendelse.yaml
+  source_url: https://raw.githubusercontent.com/HA-Marvin/ha-lommepenge/main/blueprints/automation/lommepenge/approval.yaml
   input:
     notify_services:
-      name: Forældrenes notify-tjenester
+      name: The parents' notify services
       description: >
-        Én pr. linje, fx notify.mobile_app_pixel_8 (findes under
-        Udviklerværktøjer → Handlinger).
+        One per line, e.g. notify.mobile_app_pixel_8 (found under
+        Developer tools → Actions).
       selector:
         text:
           multiple: true
     parents:
-      name: Forældre der må godkende
-      description: Kun tryk fra disse personers HA-brugere bliver udført.
+      name: Parents who may approve
+      description: Only taps from these people's HA users are carried out.
       selector:
         entity:
           filter:
             - domain: person
           multiple: true
+    approve_label:
+      name: Label of the approve button
+      default: Approve
+      selector:
+        text:
+    reject_label:
+      name: Label of the reject button
+      default: Reject
+      selector:
+        text:
 
 mode: queued
 max: 25
@@ -31,6 +43,8 @@ max: 25
 variables:
   notify_services: !input notify_services
   parents: !input parents
+  approve_label: !input approve_label
+  reject_label: !input reject_label
   parent_user_ids: >
     {{ parents | map('state_attr', 'user_id') | select('string') | list }}
 
@@ -39,36 +53,32 @@ triggers:
     event_type: lommepenge_event
     event_data:
       event: completion_pending
-    id: ny
+    id: new
   - trigger: event
     event_type: lommepenge_event
     event_data:
       event: completion_approved
-    id: afgjort
+    id: decided
   - trigger: event
     event_type: lommepenge_event
     event_data:
       event: completion_rejected
-    id: afgjort
+    id: decided
   - trigger: event
     event_type: mobile_app_notification_action
-    id: svar
+    id: answer
 
 actions:
   - choose:
       - conditions:
           - condition: trigger
-            id: ny
+            id: new
         sequence:
           - variables:
               cid: "{{ trigger.event.data.completionId }}"
-              kr: >
-                {{ ('%.2f' | format((trigger.event.data.amountOre | int(0)) / 100))
-                   | replace('.00', '') | replace('.', ',') }}
               msg: >
-                {{ trigger.event.data.childName }} har lavet
-                "{{ trigger.event.data.taskTitle }}" – {{ kr }} kr
-                {%- if trigger.event.data.late %} (for sent){% endif %}
+                {{ trigger.event.data.message
+                   or (trigger.event.data.childName ~ ': ' ~ trigger.event.data.taskTitle) }}
           - repeat:
               for_each: "{{ notify_services }}"
               sequence:
@@ -80,14 +90,14 @@ actions:
                     data:
                       tag: "lommepenge_{{ cid }}"
                       actions:
-                        - action: "LOMMEPENGE_GODKEND_{{ cid }}"
-                          title: Godkend
-                        - action: "LOMMEPENGE_AFVIS_{{ cid }}"
-                          title: Afvis
+                        - action: "LOMMEPENGE_APPROVE_{{ cid }}"
+                          title: "{{ approve_label }}"
+                        - action: "LOMMEPENGE_REJECT_{{ cid }}"
+                          title: "{{ reject_label }}"
 
       - conditions:
           - condition: trigger
-            id: afgjort
+            id: decided
         sequence:
           - repeat:
               for_each: "{{ notify_services }}"
@@ -101,17 +111,17 @@ actions:
 
       - conditions:
           - condition: trigger
-            id: svar
+            id: answer
           - condition: template
             value_template: >
               {% set a = trigger.event.data.action | default('') %}
-              {{ a.startswith('LOMMEPENGE_GODKEND_') or a.startswith('LOMMEPENGE_AFVIS_') }}
+              {{ a.startswith('LOMMEPENGE_APPROVE_') or a.startswith('LOMMEPENGE_REJECT_') }}
           - condition: template
             value_template: "{{ trigger.event.context.user_id in parent_user_ids }}"
         sequence:
           - variables:
               parts: "{{ trigger.event.data.action.split('_', 2) }}"
           - action: >
-              {{ 'lommepenge.approve' if parts[1] == 'GODKEND' else 'lommepenge.reject' }}
+              {{ 'lommepenge.approve' if parts[1] == 'APPROVE' else 'lommepenge.reject' }}
             data:
               completion_id: "{{ parts[2] }}"

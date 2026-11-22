@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
-/// Simpel visuel fremskridtsvisning: et sæt stjerner der viser hvor
-/// mange opgaver der er fuldført denne uge, op til [max]. Bevidst
-/// enkelt - ingen "gamification" ud over dette.
+import '../l10n/l10n.dart';
+
+/// Simple visual progress display: a set of stars showing how many tasks have
+/// been completed this week, up to [max]. Deliberately simple - no
+/// "gamification" beyond this.
 class WeeklyProgress extends StatelessWidget {
   final int completedCount;
   final int max;
@@ -29,7 +31,7 @@ class WeeklyProgress extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Denne uge: $completedCount fuldførte opgaver',
+          context.l10n.completedThisWeek(completedCount),
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 4),

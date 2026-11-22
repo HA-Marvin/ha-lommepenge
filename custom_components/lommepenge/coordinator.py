@@ -1,4 +1,4 @@
-"""Overblik til entiteter og hændelser - beregnes af HA selv."""
+"""Overview for entities and events - calculated by HA itself."""
 
 from __future__ import annotations
 
@@ -17,14 +17,14 @@ _LOGGER = logging.getLogger(__name__)
 
 type LommepengeConfigEntry = ConfigEntry[LommepengeRuntime]
 
-# Bruges af entiteterne; samme navn som før for at holde dem enkle.
+# Used by the entities; same name as before to keep them simple.
 LommepengeError = FamilyError
 
 
 class LommepengeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Genberegner overblikket hvert 30. sekund (frister passerer) og
-    straks efter hver handling. Sender `lommepenge_event` ved nye eller
-    afgjorte godkendelser og ændret spærring."""
+    """Recalculates the overview every 30 seconds (deadlines pass) and right
+    after every action. Fires `lommepenge_event` for new or decided approvals
+    and changed restrictions."""
 
     config_entry: LommepengeConfigEntry
 
@@ -48,13 +48,16 @@ class LommepengeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @callback
     def async_refresh_now(self) -> None:
-        """Efter en handling: nyt overblik og hændelser med det samme."""
+        """After an action: a new overview and events right away."""
         self.async_set_updated_data(self._compute())
 
     @callback
     def _compute(self) -> dict[str, Any]:
         family = self.runtime.family
-        summary = family.summary(self.runtime.family_name, local_now())
+        runtime = self.runtime
+        summary = family.summary(
+            runtime.family_name, local_now(), runtime.language, runtime.currency
+        )
         self._fire_events(summary)
         return summary
 
@@ -63,8 +66,8 @@ class LommepengeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         pending = {p["completionId"]: p for p in summary["pending"]}
         restricted = {c["id"]: c for c in summary["children"]}
         if self._last_pending is None:
-            # Første beregning efter opstart er udgangspunktet - ingen
-            # hændelser for det, der allerede ventede.
+            # The first calculation after startup is the baseline - no events
+            # for what was already waiting.
             self._last_pending = pending
             self._last_restricted = {k: c["restricted"] for k, c in restricted.items()}
             return
@@ -82,7 +85,9 @@ class LommepengeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "event": "completion_approved"
                     if completion["status"] == "approved"
                     else "completion_rejected",
-                    **family.completion_json(completion),
+                    **family.completion_json(
+                        completion, self.runtime.language, self.runtime.currency
+                    ),
                 }
             )
         for child_id, child in restricted.items():
@@ -106,10 +111,10 @@ class LommepengeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
     async def async_action(self, action_type: str, payload: dict[str, Any]) -> None:
-        """Handling fra HA selv (entitet eller service)."""
+        """An action from HA itself (entity or service)."""
         await self.runtime.async_apply({"type": action_type, "payload": payload})
 
-    # ---- Opslag brugt af entiteter ----------------------------------------
+    # ---- Lookups used by entities -------------------------------------------
 
     @property
     def children(self) -> list[dict[str, Any]]:

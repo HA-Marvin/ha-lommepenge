@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/l10n.dart';
 import '../models/family_settings.dart';
 import '../models/task.dart';
 import '../providers/app_state.dart';
+import 'language_screen.dart';
 
-/// "Indstillinger"-fanen i forælder-tilstand: familiens tider og grænser
-/// (de samme værdier kan rettes fra Home Assistant), dagens spærringer og
-/// enhedens forbindelse til Home Assistant.
+/// The "Settings" tab in parent mode: the app's language, the family's times
+/// and limits (the same values can be changed from Home Assistant), today's
+/// restrictions and the device's connection to Home Assistant.
 class SettingsTabContent extends StatelessWidget {
   const SettingsTabContent({super.key});
 
@@ -63,12 +65,12 @@ class SettingsTabContent extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Annullér'),
+            child: Text(ctx.l10n.cancel),
           ),
           FilledButton(
             onPressed: () =>
                 Navigator.of(ctx).pop(int.tryParse(controller.text)),
-            child: const Text('Gem'),
+            child: Text(ctx.l10n.save),
           ),
         ],
       ),
@@ -83,6 +85,7 @@ class SettingsTabContent extends StatelessWidget {
     final appState = context.watch<AppState>();
     final s = appState.familySettings;
     final title = Theme.of(context).textTheme.titleMedium;
+    final l10n = context.l10n;
 
     Widget timeTile(String key, String label, String value, String help) =>
         ListTile(
@@ -111,31 +114,41 @@ class SettingsTabContent extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16),
       children: [
+        ListTile(
+          leading: const Icon(Icons.language),
+          title: Text(l10n.language),
+          trailing: Text(
+            supportedLanguages[appState.language]!,
+            style: title,
+          ),
+          onTap: () => showLanguagePicker(context),
+        ),
+        const Divider(height: 32),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text('Tider og grænser', style: title),
+          child: Text(l10n.timesAndLimits, style: title),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: Text(
-            'Kan også rettes fra Home Assistant. Tryk for at ændre.',
+            l10n.timesAndLimitsHint,
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ),
-        timeTile('defaultDueTime', 'Standardfrist', s.defaultDueTime,
-            'For obligatoriske opgaver uden egen frist.'),
-        timeTile('restrictionStart', 'Spærretid fra', s.restrictionStart,
-            'Tablets kan tidligst spærres fra dette tidspunkt.'),
-        timeTile('restrictionEnd', 'Spærretid til', s.restrictionEnd,
-            'Efter dette tidspunkt ophæves spærringen.'),
-        numberTile('latePauseMinutes', 'Pausetid', s.latePauseMinutes, 'min',
-            'Ventetid før tabletten låses op, når en opgave er udført for sent.'),
-        numberTile('warningMinutes', 'Advarsel før frist', s.warningMinutes,
-            'min', 'Hvor længe før fristen barnet advares.'),
-        numberTile('winterFromWeek', 'Vinter fra uge', s.winterFromWeek, '',
-            'Bruges til pakkelister (fx indendørssko).'),
-        numberTile('winterToWeek', 'Vinter til uge', s.winterToWeek, '',
-            'Bruges til pakkelister (fx indendørssko).'),
+        timeTile('defaultDueTime', l10n.defaultDeadline, s.defaultDueTime,
+            l10n.defaultDeadlineHelp),
+        timeTile('restrictionStart', l10n.restrictionFrom, s.restrictionStart,
+            l10n.restrictionFromHelp),
+        timeTile('restrictionEnd', l10n.restrictionUntil, s.restrictionEnd,
+            l10n.restrictionUntilHelp),
+        numberTile('latePauseMinutes', l10n.pauseTime, s.latePauseMinutes,
+            l10n.minutesUnit, l10n.pauseTimeHelp),
+        numberTile('warningMinutes', l10n.warningBeforeDeadline,
+            s.warningMinutes, l10n.minutesUnit, l10n.warningBeforeDeadlineHelp),
+        numberTile('winterFromWeek', l10n.winterFromWeek, s.winterFromWeek, '',
+            l10n.winterHelp),
+        numberTile('winterToWeek', l10n.winterToWeek, s.winterToWeek, '',
+            l10n.winterHelp),
         TextButton(
           onPressed: () async {
             for (final entry in FamilySettings.defaults.toJson().entries) {
@@ -143,12 +156,12 @@ class SettingsTabContent extends StatelessWidget {
               if (!context.mounted) return;
             }
           },
-          child: const Text('Nulstil til standard'),
+          child: Text(l10n.resetToDefaults),
         ),
         const Divider(height: 32),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text('Spærring i dag', style: title),
+          child: Text(l10n.restrictionToday, style: title),
         ),
         for (final child in appState.children)
           _RestrictionTile(appState: appState, childId: child.id),
@@ -167,19 +180,20 @@ class _RestrictionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final child = appState.childrenById[childId]!;
     final f = appState.followUpFor(childId);
     final String status;
     if (f == null) {
       status = '';
     } else if (f.suspended) {
-      status = 'Ophævet for i dag';
+      status = l10n.liftedForToday;
     } else if (f.restricted) {
-      status = f.reason ?? 'Spærret';
+      status = f.reason(l10n) ?? l10n.restricted;
     } else if (f.overdue.isNotEmpty) {
-      status = 'Forsinket, men uden for spærretiden';
+      status = l10n.overdueOutsideWindow;
     } else {
-      status = 'Ikke spærret';
+      status = l10n.notRestricted;
     }
     return ListTile(
       leading: Icon(
@@ -192,7 +206,7 @@ class _RestrictionTile extends StatelessWidget {
           ? null
           : TextButton(
               onPressed: () => appState.suspendRestriction(childId),
-              child: const Text('Ophæv i dag'),
+              child: Text(l10n.liftToday),
             ),
     );
   }
@@ -204,9 +218,10 @@ class _ConnectionSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
+    final l10n = context.l10n;
     final connection = appState.connection;
     final lastSync = appState.lastSyncAt;
-    final role = appState.isScreen ? 'Fælles skærm' : 'Forælders telefon';
+    final role = appState.isScreen ? l10n.roleFamilyScreen : l10n.roleParentPhone;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -219,48 +234,41 @@ class _ConnectionSection extends StatelessWidget {
             leading: const Icon(Icons.devices_other),
             title: Text(appState.settings.deviceName),
             subtitle: Text(
-              '$role · app-version '
-              '${appState.appVersion.isEmpty ? '?' : appState.appVersion}',
+              l10n.deviceSubtitle(
+                role,
+                appState.appVersion.isEmpty ? '?' : appState.appVersion,
+              ),
             ),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.home_outlined),
-            title: Text(connection?.baseUrl.toString() ?? 'Ikke forbundet'),
+            title: Text(connection?.baseUrl.toString() ?? l10n.notConnected),
             subtitle: Text(
               lastSync == null
-                  ? (appState.syncMessage ?? 'Ikke hentet endnu')
-                  : 'Senest opdateret kl. '
-                      '${lastSync.hour.toString().padLeft(2, '0')}:'
-                      '${lastSync.minute.toString().padLeft(2, '0')}',
+                  ? (appState.syncMessage ?? l10n.notFetchedYet)
+                  : l10n.lastUpdatedAt(formatTimeOfDay(lastSync)),
             ),
           ),
-          const Text(
-            'Nye enheder tilføjes i Home Assistant under Lommepenge → '
-            'Tilføj enhed. Dér fjernes de også igen.',
-          ),
+          Text(l10n.addDevicesHint),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             icon: const Icon(Icons.link_off),
-            label: const Text('Glem forbindelsen på denne enhed'),
+            label: Text(l10n.forgetConnection),
             onPressed: () async {
               final confirmed = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  title: const Text('Glem forbindelsen?'),
-                  content: const Text(
-                    'Enheden skal forbindes igen med en ny QR-kode fra Home '
-                    'Assistant. Fjern den også under Lommepenge i Home '
-                    'Assistant, hvis den ikke skal bruges mere.',
-                  ),
+                  title: Text(ctx.l10n.forgetConnectionTitle),
+                  content: Text(ctx.l10n.forgetConnectionBody),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.of(ctx).pop(false),
-                      child: const Text('Annullér'),
+                      child: Text(ctx.l10n.cancel),
                     ),
                     FilledButton(
                       onPressed: () => Navigator.of(ctx).pop(true),
-                      child: const Text('Glem'),
+                      child: Text(ctx.l10n.forget),
                     ),
                   ],
                 ),

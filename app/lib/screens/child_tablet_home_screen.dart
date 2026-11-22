@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/l10n.dart';
 import '../models/child.dart';
 import '../providers/app_state.dart';
 import '../widgets/child_task_list.dart';
 import '../widgets/sync_indicator.dart';
 import '../widgets/update_banner.dart';
+import 'language_screen.dart';
 
-/// Barnets tablet: kun dét barns saldo og opgaver. Der er ingen
-/// lås-/forælder-knap - forælder-delen findes ikke på denne enhed, og
-/// skærmen afviser i øvrigt alt andet end "markér udført" for barnet
-/// selv (det håndhæves af Home Assistant).
+/// The child's tablet: only that child's balance and tasks. There is no
+/// lock/parent button - the parent part does not exist on this device, and
+/// Home Assistant refuses anything other than "mark as done" for the child
+/// itself anyway. The language can be changed from the app bar.
 class ChildTabletHomeScreen extends StatefulWidget {
   const ChildTabletHomeScreen({super.key});
 
@@ -47,11 +49,15 @@ class _ChildTabletHomeScreenState extends State<ChildTabletHomeScreen>
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final child = appState.boundChild;
+    final l10n = context.l10n;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(child == null ? 'Lommepenge' : 'Hej ${child.name}!'),
-        actions: [SyncIndicator(appState: appState)],
+        title: Text(child == null ? 'Lommepenge' : l10n.hiChild(child.name)),
+        actions: [
+          SyncIndicator(appState: appState),
+          const LanguageButton(),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _sync,
@@ -61,8 +67,7 @@ class _ChildTabletHomeScreenState extends State<ChildTabletHomeScreen>
                   Padding(
                     padding: const EdgeInsets.all(32),
                     child: Text(
-                      appState.syncMessage ??
-                          'Henter dine opgaver...',
+                      appState.syncMessage ?? l10n.fetchingYourTasks,
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -96,10 +101,10 @@ class _ChildTabletHomeScreenState extends State<ChildTabletHomeScreen>
               settings: appState.familySettings,
             ),
             if (tasks.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(32),
+              Padding(
+                padding: const EdgeInsets.all(32),
                 child: Text(
-                  'Du har ingen opgaver lige nu.',
+                  context.l10n.noTasksRightNow,
                   textAlign: TextAlign.center,
                 ),
               )

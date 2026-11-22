@@ -1,18 +1,22 @@
-"""HTTP-API'et som appen taler med - kun på hjemmenettet.
+"""The HTTP API the app talks to - home network only.
 
-Appen bruger ikke HA's egne brugere/tokens. Hver enhed har sin egen nøgle
-(fra parringen) og signerer alle forespørgsler, så en barne-tablet aldrig
-får adgang til resten af Home Assistant.
+The app does not use HA's own users/tokens. Every device has its own key
+(from pairing) and signs all requests, so a child's tablet never gets access
+to the rest of Home Assistant.
 
-    GET  /api/lommepenge                        startside: appen og vejledning
-    GET  /api/lommepenge/install/{token}        tilføj-enhed-side (kode, QR, app)
-    GET  /api/lommepenge/qr/{token}.svg         QR-koden til "Tilføj enhed"
-    GET  /api/lommepenge/download/{token}/...   APK til første installation
-    GET  /api/lommepenge/app.apk                APK uden kode (enheder uden kamera)
-    POST /api/lommepenge/pair                   parringslink -> enhedsnøgle
-    GET  /api/lommepenge/state                  familiens data   (signeret)
-    POST /api/lommepenge/action                 udfør handling   (signeret)
-    GET  /api/lommepenge/apk                    APK til opdatering (signeret)
+    GET  /api/lommepenge                        start page: the app and instructions
+    GET  /api/lommepenge/install/{token}        add-device page (code, QR, app)
+    GET  /api/lommepenge/qr/{token}.svg         the QR code for "Add device"
+    GET  /api/lommepenge/download/{token}/...   APK for the first installation
+    GET  /api/lommepenge/app.apk                APK without a code (devices without camera)
+    POST /api/lommepenge/pair                   pairing code -> device key
+    GET  /api/lommepenge/state                  the family's data   (signed)
+    POST /api/lommepenge/action                 perform an action   (signed)
+    GET  /api/lommepenge/apk                    APK for an update   (signed)
+
+Error messages for the app follow the language chosen in the app (sent in
+`X-Lommepenge-Language`); everything else follows the language chosen for the
+integration. Neither the browser's nor HA's language is ever used.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ from homeassistant.util import dt as dt_util, network as network_util
 
 from .const import API_PREFIX, DOMAIN, ROLE_CHILD, ROLE_PARENT, ROLE_SCREEN
 from .family import FamilyError
+from .i18n import normalize_language, translate
 from .releases import GitHubError
 from .runtime import (
     AuthError,
@@ -52,9 +57,9 @@ APP_PACKAGE = "dk.familie.lommepenge_app"
 MAX_BODY = 64 * 1024
 
 ROLE_LABELS = {
-    ROLE_SCREEN: "Fælles skærm",
-    ROLE_PARENT: "Forælder",
-    ROLE_CHILD: "Barnets tablet",
+    ROLE_SCREEN: "role_screen",
+    ROLE_PARENT: "role_parent",
+    ROLE_CHILD: "role_child",
 }
 
 
@@ -74,8 +79,8 @@ def async_register_views(hass: HomeAssistant) -> None:
 
 
 def base_url(hass: HomeAssistant) -> str:
-    """HA's adresse på hjemmenettet. Bruger den lokale IP, så en ny enhed kan
-    nå den uden at kende `homeassistant.local`."""
+    """HA's address on the home network. Uses the local IP, so a new device
+    can reach it without knowing `homeassistant.local`."""
     api = hass.config.api
     if api is not None and api.local_ip and api.local_ip != "127.0.0.1":
         scheme = "https" if api.use_ssl else "http"
@@ -87,29 +92,40 @@ def base_url(hass: HomeAssistant) -> str:
 
 
 def install_url(hass: HomeAssistant, token: str) -> str:
-    """Link i QR-koden (og til at taste i en browser)."""
+    """The link in the QR code (and for typing into a browser)."""
     return f"{base_url(hass)}{API_PREFIX}/install/{token}"
 
 
 def home_url(hass: HomeAssistant) -> str:
-    """Fast side med appen og vejledningen ("Besøg" på Lommepenge i HA)."""
+    """Fixed page with the app and instructions ("Visit" on Lommepenge in HA)."""
     return f"{base_url(hass)}{API_PREFIX}"
 
 
 def app_url(hass: HomeAssistant) -> str:
-    """Fast link til appen - kræver ingen kode."""
+    """Fixed link to the app - requires no code."""
     return f"{base_url(hass)}{API_PREFIX}/app.apk"
+
+
+LANGUAGE_HEADER = "X-Lommepenge-Language"
+
+
+def _language(request: web.Request, runtime: LommepengeRuntime | None = None) -> str | None:
+    """The language chosen in the app, else the integration's. Deliberately not
+    `Accept-Language`, which browsers fill in from the device's language."""
+    return normalize_language(request.headers.get(LANGUAGE_HEADER)) or (
+        runtime.language if runtime is not None else None
+    )
 
 
 def _runtime(request: web.Request) -> LommepengeRuntime:
     runtime = request.app[KEY_HASS].data.get(DOMAIN)
     if runtime is None:
-        raise web.HTTPServiceUnavailable(text="Lommepenge er ikke sat op i Home Assistant.")
+        raise web.HTTPServiceUnavailable(text=translate("not_set_up", _language(request)))
     return runtime
 
 
 def _require_local(request: web.Request) -> None:
-    """Kun hjemmenettet - aldrig via HA's eksterne adresse eller skyen."""
+    """Home network only - never via HA's external address or the cloud."""
     hass = request.app[KEY_HASS]
     try:
         local = not is_cloud_connection(hass) and network_util.is_local(
@@ -118,7 +134,7 @@ def _require_local(request: web.Request) -> None:
     except ValueError:
         local = False
     if not local:
-        raise web.HTTPForbidden(text="Kun tilgængelig på hjemmenettet.")
+        raise web.HTTPForbidden(text=translate("local_only", _language(request)))
 
 
 def _error(status: HTTPStatus, message: str) -> web.Response:
@@ -126,30 +142,31 @@ def _error(status: HTTPStatus, message: str) -> web.Response:
 
 
 class _LocalView(HomeAssistantView):
-    """Appens endpoints: ingen HA-login, men altid kun lokalt."""
+    """The app's endpoints: no HA login, but always local only."""
 
     requires_auth = False
     cors_allowed = False
 
 
 class _SignedView(_LocalView):
-    """Endpoints der kræver en parret enheds signatur."""
+    """Endpoints that require a paired device's signature."""
 
     async def _device(self, request: web.Request, body: bytes) -> tuple[LommepengeRuntime, dict[str, Any]]:
         _require_local(request)
         runtime = _runtime(request)
-        headers = request.headers  # opslag uden hensyn til store/små bogstaver
+        headers = request.headers  # case-insensitive lookups
         try:
             device = runtime.verify(headers, request.method, request.path, body)
         except AuthError as err:
             raise web.HTTPUnauthorized(
-                text=json.dumps({"error": str(err)}), content_type="application/json"
+                text=json.dumps({"error": err.translate(_language(request, runtime))}),
+                content_type="application/json",
             ) from err
         runtime.async_device_seen(device, headers)
         return runtime, device
 
 
-# ---- Installation og parring -------------------------------------------------
+# ---- Installation and pairing ----------------------------------------------------
 
 
 def _release_version(runtime: LommepengeRuntime) -> str | None:
@@ -158,23 +175,19 @@ def _release_version(runtime: LommepengeRuntime) -> str | None:
 
 
 def _download_button(runtime: LommepengeRuntime) -> str:
+    language = runtime.language
     version = _release_version(runtime)
     if version is None:
-        return (
-            '<p class="hint">Home Assistant har ikke kunnet hente appen fra GitHub '
-            "endnu. Prøv igen om lidt.</p>"
-        )
+        return f'<p class="hint">{escape(translate("page_no_app", language))}</p>'
     return (
         f'<a class="button" href="{API_PREFIX}/app.apk" download="lommepenge-{escape(version)}.apk">'
-        f"Hent appen (.apk, version {escape(version)})</a>"
-        '<p class="hint">Har enheden ingen browser, så hent filen her på computeren og '
-        "flyt den over, fx med et USB-kabel. Android spørger én gang, om appen må "
-        "installeres.</p>"
+        f"{escape(translate('page_download', language, version=version))}</a>"
+        f'<p class="hint">{escape(translate("page_download_hint", language))}</p>'
     )
 
 
 class HomePageView(_LocalView):
-    """Fast side med appen og vejledningen - "Besøg" på Lommepenge i HA."""
+    """Fixed page with the app and instructions - "Visit" on Lommepenge in HA."""
 
     url = API_PREFIX
     name = "api:lommepenge:home"
@@ -182,24 +195,25 @@ class HomePageView(_LocalView):
     async def get(self, request: web.Request) -> web.Response:
         _require_local(request)
         runtime = _runtime(request)
+        language = runtime.language
+        # The step texts contain trusted markup (<b>) from i18n.py.
         body = (
             f"<p>{escape(runtime.family_name)}</p>"
             f"{_download_button(runtime)}"
-            "<h2>Tilføj en enhed</h2>"
+            f"<h2>{escape(translate('page_add_device', language))}</h2>"
             "<ol>"
-            "<li>Installér appen på enheden.</li>"
-            "<li>I Home Assistant: <b>Indstillinger → Enheder og tjenester → Lommepenge "
-            "→ Tilføj enhed</b>. Vælg navn og rolle.</li>"
-            "<li>Åbn appen på enheden, og tast koden, som Home Assistant viser - eller "
-            "scan QR-koden, hvis enheden har kamera.</li>"
+            f"<li>{escape(translate('page_home_step_install', language))}</li>"
+            f"<li>{translate('page_home_step_add', language)}</li>"
+            f"<li>{escape(translate('page_home_step_code', language))}</li>"
             "</ol>"
         )
-        return _page("Lommepenge", body)
+        return _page("Lommepenge", body, language)
 
 
 class InstallPageView(_LocalView):
-    """Siden bag "Tilføj enhed": kode, QR-kode og appen. Kan åbnes både på
-    den nye enhed (via QR-koden) og på computeren (via linket i HA)."""
+    """The page behind "Add device": code, QR code and the app. Can be opened
+    both on the new device (via the QR code) and on the computer (via the link
+    in HA)."""
 
     url = f"{API_PREFIX}/install/{{token}}"
     name = "api:lommepenge:install"
@@ -207,14 +221,15 @@ class InstallPageView(_LocalView):
     async def get(self, request: web.Request, token: str) -> web.Response:
         _require_local(request)
         runtime = _runtime(request)
+        language = runtime.language
         hass = request.app[KEY_HASS]
         pairing = runtime.pairing(token)
         if pairing is None or pairing.get("used"):
             return _page(
-                "Koden er brugt eller udløbet",
-                "<p>Lav en ny i Home Assistant: <b>Lommepenge → Tilføj enhed</b> - eller "
-                "<b>Omkonfigurér</b> på en enhed, der allerede findes.</p>"
+                translate("page_code_used_title", language),
+                f"<p>{translate('page_code_used_body', language)}</p>"
                 f"{_download_button(runtime)}",
+                language,
             )
         code = pairing_code(token)
         expires = dt_util.as_local(dt_util.parse_datetime(pairing["expires"])).strftime("%H:%M")
@@ -232,34 +247,34 @@ class InstallPageView(_LocalView):
             )
             open_app = (
                 f'<a class="button secondary" href="{escape(pair_link)}">'
-                "Åbn appen og forbind</a>"
-                '<p class="hint">Når appen er installeret på denne enhed.</p>'
+                f"{escape(translate('page_open_app', language))}</a>"
+                f'<p class="hint">{escape(translate("page_open_app_hint", language))}</p>'
             )
+        role = ROLE_LABELS.get(pairing["role"])
         body = (
             f"<p>{escape(runtime.family_name)} · "
-            f"{escape(ROLE_LABELS.get(pairing['role'], ''))}</p>"
-            '<p class="label">Kode</p>'
+            f"{escape(translate(role, language) if role else '')}</p>"
+            f'<p class="label">{escape(translate("page_code_label", language))}</p>'
             f'<p class="code">{escape(code)}</p>'
-            f'<p class="hint">Gælder én gang, indtil kl. {escape(expires)}. '
+            f'<p class="hint">{escape(translate("page_code_valid", language, expires=expires))} '
             f"Home Assistant: {escape(base_url(hass))}</p>"
             f"{open_app}"
-            "<h2>Sådan gør du</h2>"
+            f"<h2>{escape(translate('page_how_to', language))}</h2>"
             "<ol>"
-            "<li>Installér appen på enheden (knappen herunder).</li>"
-            "<li>Åbn appen, vælg <b>Forbind med kode</b>, og tast koden. Appen finder "
-            "selv Home Assistant.</li>"
-            "<li>Har enheden kamera, kan den i stedet scanne QR-koden.</li>"
-            "<li>Tryk <b>Send</b> i Home Assistant, når enheden er forbundet.</li>"
+            f"<li>{escape(translate('page_step_install', language))}</li>"
+            f"<li>{translate('page_step_code', language)}</li>"
+            f"<li>{escape(translate('page_step_qr', language))}</li>"
+            f"<li>{escape(translate('page_step_confirm', language))}</li>"
             "</ol>"
             f'<div class="qr">{qr.getvalue().decode()}</div>'
             f"{_download_button(runtime)}"
         )
-        return _page(f"Tilføj {pairing['name']}", body)
+        return _page(translate("page_add_title", language, name=pairing["name"]), body, language)
 
 
-def _page(title: str, body: str) -> web.Response:
+def _page(title: str, body: str, language: str) -> web.Response:
     html = f"""<!doctype html>
-<html lang="da"><head><meta charset="utf-8">
+<html lang="{escape(language)}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{escape(title)}</title>
 <style>
@@ -313,21 +328,23 @@ class DownloadView(_LocalView):
     async def get(self, request: web.Request, token: str, filename: str) -> web.StreamResponse:
         _require_local(request)
         runtime = _runtime(request)
-        # Linket må gerne være brugt til parring - appen hentes ofte bagefter.
+        # The code may already have been used for pairing - the app is often
+        # downloaded afterwards.
         if runtime.pairing(token) is None:
-            raise web.HTTPNotFound(text="Linket er udløbet.")
+            raise web.HTTPNotFound(text=translate("link_expired", _language(request, runtime)))
         return await _stream_apk(request, runtime)
 
 
 async def _stream_apk(request: web.Request, runtime: LommepengeRuntime) -> web.StreamResponse:
+    language = _language(request, runtime)
     release = runtime.releases.data if runtime.releases is not None else None
     if release is None:
-        raise web.HTTPNotFound(text="Home Assistant har ikke hentet appen endnu.")
+        raise web.HTTPNotFound(text=translate("app_not_fetched", language))
     try:
         return await runtime.releases.github.stream_apk(request, release)
     except GitHubError as err:
-        _LOGGER.warning("Kunne ikke hente APK fra GitHub: %s", err)
-        raise web.HTTPBadGateway(text="Kunne ikke hente appen fra GitHub.") from err
+        _LOGGER.warning("Could not fetch the APK from GitHub: %s", err)
+        raise web.HTTPBadGateway(text=translate("app_fetch_failed", language)) from err
 
 
 class PairView(_LocalView):
@@ -337,11 +354,12 @@ class PairView(_LocalView):
     async def post(self, request: web.Request) -> web.Response:
         _require_local(request)
         runtime = _runtime(request)
+        language = _language(request, runtime)
         try:
             body = json.loads(await request.read() or b"{}")
             token = body["token"]
         except (ValueError, KeyError, TypeError):
-            return _error(HTTPStatus.BAD_REQUEST, "Ugyldig forespørgsel.")
+            return _error(HTTPStatus.BAD_REQUEST, translate("invalid_request", language))
         try:
             device = await runtime.async_redeem_pairing(
                 str(token),
@@ -351,9 +369,9 @@ class PairView(_LocalView):
                 },
             )
         except TooManyPairingAttempts as err:
-            return _error(HTTPStatus.TOO_MANY_REQUESTS, str(err))
+            return _error(HTTPStatus.TOO_MANY_REQUESTS, err.translate(language))
         except PairingError as err:
-            return _error(HTTPStatus.GONE, str(err))
+            return _error(HTTPStatus.GONE, err.translate(language))
         return web.json_response(
             {
                 "deviceId": device["id"],
@@ -366,7 +384,7 @@ class PairView(_LocalView):
         )
 
 
-# ---- Signerede endpoints -----------------------------------------------------
+# ---- Signed endpoints -----------------------------------------------------------
 
 
 class StateView(_SignedView):
@@ -385,27 +403,31 @@ class ActionView(_SignedView):
     async def post(self, request: web.Request) -> web.Response:
         body = await request.content.read(MAX_BODY + 1)
         if len(body) > MAX_BODY:
-            return _error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "For stor forespørgsel.")
+            return _error(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                translate("request_too_large", _language(request)),
+            )
         runtime, device = await self._device(request, body)
+        language = _language(request, runtime)
         try:
             action = json.loads(body)
             if not isinstance(action, dict):
                 raise ValueError
         except ValueError:
-            return _error(HTTPStatus.BAD_REQUEST, "Ugyldig handling.")
+            return _error(HTTPStatus.BAD_REQUEST, translate("invalid_action", language))
         try:
             await runtime.async_apply(action, device=device)
         except ForbiddenError as err:
-            return _error(HTTPStatus.FORBIDDEN, str(err))
+            return _error(HTTPStatus.FORBIDDEN, err.translate(language))
         except FamilyError as err:
-            return _error(HTTPStatus.BAD_REQUEST, str(err))
+            return _error(HTTPStatus.BAD_REQUEST, err.translate(language))
         return web.json_response(runtime.state_for(device))
 
 
 class AppApkView(_LocalView):
-    """Appen uden kode, til at taste i en browser på en enhed uden kamera.
-    APK'en er alligevel offentlig på GitHub; den kan ikke forbinde til noget
-    uden en parringskode."""
+    """The app without a code, for typing into a browser on a device without a
+    camera. The APK is public on GitHub anyway; it cannot connect to anything
+    without a pairing code."""
 
     url = f"{API_PREFIX}/app.apk"
     name = "api:lommepenge:app"

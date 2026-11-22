@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../l10n/l10n.dart';
 import '../logic/recurrence.dart';
 import '../models/task.dart';
+import '../providers/app_state.dart';
 import 'amount_text.dart';
 
-/// Ét barns tilgængeligheds-status for én bestemt opgave - bruges af
-/// [TaskCard] til at vise/håndtere hvert tildelt barn uafhængigt af de
-/// andre (en opgave delt mellem flere børn optjenes pr. barn, jf.
+/// One child's availability status for one specific task - used by
+/// [TaskCard] to show/handle each assigned child independently of the others
+/// (a task shared between several children is earned per child, see
 /// `TaskRepository.completeTask`/`availabilityFor`).
 class ChildTaskStatus {
   final String childId;
@@ -22,15 +25,15 @@ class ChildTaskStatus {
   });
 }
 
-/// Viser én opgave i barne-tilstand med tydeligt beløb, status og en
-/// "Udført"-knap der kun er aktiv når opgaven kan udføres.
+/// Shows one task in child mode with a clear amount, status and a "Done"
+/// button that is only active when the task can be done.
 ///
-/// [childStatuses] er statussen for hvert barn opgaven reelt er tildelt
-/// lige nu (jf. [Task.assignedChildIds] og den dynamiske "alle børn").
-/// Er der kun ét barn tildelt, vises den simple ét-knap-UI som hidtil
-/// (med barnets navn vist direkte på kortet); er der flere, vises én
-/// række pr. barn med sit eget navn og sin egen knap/status, så børnene
-/// kan markere/godkendes helt uafhængigt af hinanden.
+/// [childStatuses] is the status for each child the task is actually
+/// assigned to right now (see [Task.assignedChildIds] and the dynamic "all
+/// children"). With only one child assigned, the simple one-button UI is shown
+/// (with the child's name shown directly on the card); with several, one row
+/// per child is shown with its own name and its own button/status, so the
+/// children can mark/be approved completely independently of each other.
 class TaskCard extends StatelessWidget {
   final Task task;
   final List<ChildTaskStatus> childStatuses;
@@ -46,12 +49,14 @@ class TaskCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isShared = childStatuses.length > 1;
+    final l10n = context.l10n;
+    final currency = context.watch<AppState>().currency;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      // Obligatoriske opgaver ("skal udføres") markeres tydeligt med rød
-      // kant/tint, så de visuelt skiller sig ud fra valgfri opgaver
-      // (som beholder kortets almindelige udseende).
+      // Mandatory tasks ("must be done") are marked clearly with a red
+      // border/tint, so they stand out visually from optional tasks (which
+      // keep the card's normal look).
       color: task.mandatory ? Colors.red[50] : null,
       shape: task.mandatory
           ? RoundedRectangleBorder(
@@ -86,14 +91,14 @@ class TaskCard extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
-                  formatKr(task.amountOre),
+                  formatAmount(l10n, task.amountOre, currency),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: Colors.green[700],
                         fontWeight: FontWeight.bold,
                       ),
                 ),
                 Chip(
-                  label: Text(task.recurrence.label),
+                  label: Text(task.recurrence.label(l10n)),
                   visualDensity: VisualDensity.compact,
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
@@ -104,7 +109,7 @@ class TaskCard extends StatelessWidget {
                       size: 16,
                       color: Colors.red[800],
                     ),
-                    label: const Text('Skal udføres'),
+                    label: Text(l10n.mustBeDone),
                     backgroundColor: Colors.red[100],
                     visualDensity: VisualDensity.compact,
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -113,15 +118,16 @@ class TaskCard extends StatelessWidget {
                   Chip(
                     avatar: const Icon(Icons.schedule, size: 16),
                     label: Text([
-                      if (task.startTime != null) 'fra ${task.startTime}',
-                      if (task.dueTime != null) 'senest ${task.dueTime}',
+                      if (task.startTime != null) l10n.fromTime(task.startTime!),
+                      if (task.dueTime != null) l10n.byTime(task.dueTime!),
                     ].join(' · ')),
                     visualDensity: VisualDensity.compact,
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                // Ved kun ét tildelt barn vises navnet direkte her som en
-                // ekstra chip - ved flere børn vises navnene i stedet i
-                // hver sin række nedenfor, så de ikke gentages to steder.
+                // With only one assigned child the name is shown directly
+                // here as an extra chip - with several children the names are
+                // shown in a row each below instead, so they are not repeated
+                // in two places.
                 if (!isShared && childStatuses.isNotEmpty)
                   Chip(
                     avatar: const Icon(Icons.person, size: 16),
@@ -134,7 +140,7 @@ class TaskCard extends StatelessWidget {
             const SizedBox(height: 8),
             if (childStatuses.isEmpty)
               Text(
-                'Ikke tildelt noget barn i familien.',
+                l10n.notAssigned,
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
@@ -165,8 +171,8 @@ class TaskCard extends StatelessWidget {
   }
 }
 
-/// Den simple ét-knap-UI, uændret fra før "flere børn"-featuren - bruges
-/// når opgaven reelt kun er tildelt ét barn.
+/// The simple one-button UI - used when the task is actually only assigned to
+/// one child.
 class _SingleChildRow extends StatelessWidget {
   final ChildTaskStatus status;
   final VoidCallback onComplete;
@@ -187,16 +193,16 @@ class _SingleChildRow extends StatelessWidget {
         const SizedBox(width: 8),
         ElevatedButton(
           onPressed: isAvailable ? onComplete : null,
-          child: const Text('Udført'),
+          child: Text(context.l10n.done),
         ),
       ],
     );
   }
 }
 
-/// Én række for ét barn på en opgave der er delt mellem flere børn -
-/// eget navn, egen status og egen knap, helt uafhængigt af de andre
-/// børns rækker på samme kort.
+/// One row for one child on a task shared between several children - its own
+/// name, its own status and its own button, completely independent of the
+/// other children's rows on the same card.
 class _ChildRow extends StatelessWidget {
   final ChildTaskStatus status;
   final VoidCallback onComplete;
@@ -239,7 +245,7 @@ class _ChildRow extends StatelessWidget {
           const SizedBox(width: 8),
           ElevatedButton(
             onPressed: isAvailable ? onComplete : null,
-            child: const Text('Udført'),
+            child: Text(context.l10n.done),
           ),
         ],
       ),
@@ -255,44 +261,44 @@ class _StatusLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final next = nextAvailableAt;
     late final String text;
     late final Color color;
     late final IconData icon;
 
     switch (availability) {
       case TaskAvailability.available:
-        text = 'Klar til at blive udført';
+        text = l10n.statusAvailable;
         color = Colors.blue[700]!;
         icon = Icons.play_circle_outline;
         break;
       case TaskAvailability.pendingApproval:
-        text = 'Venter på godkendelse';
+        text = l10n.statusPending;
         color = Colors.orange[800]!;
         icon = Icons.hourglass_top;
         break;
       case TaskAvailability.doneToday:
-        text = 'Udført i dag - tilgængelig igen i morgen';
+        text = l10n.statusDoneToday;
         color = Colors.grey[600]!;
         icon = Icons.check_circle_outline;
         break;
       case TaskAvailability.doneThisWeek:
-        final dateText = nextAvailableAt != null
-            ? ' (${_formatDate(nextAvailableAt!)})'
-            : '';
-        text = 'Udført denne uge - tilgængelig igen$dateText';
+        text = next != null
+            ? l10n.statusDoneThisWeekUntil(formatDayMonth(l10n, next))
+            : l10n.statusDoneThisWeek;
         color = Colors.grey[600]!;
         icon = Icons.check_circle_outline;
         break;
       case TaskAvailability.completedOnce:
-        text = 'Fuldført';
+        text = l10n.statusCompleted;
         color = Colors.grey[600]!;
         icon = Icons.check_circle;
         break;
       case TaskAvailability.notScheduledToday:
-        final dateText = nextAvailableAt != null
-            ? ' (${_formatDate(nextAvailableAt!)})'
-            : '';
-        text = 'Ikke på ugeplanen i dag$dateText';
+        text = next != null
+            ? l10n.statusNotScheduledUntil(formatDayMonth(l10n, next))
+            : l10n.statusNotScheduled;
         color = Colors.grey[600]!;
         icon = Icons.event_busy;
         break;
@@ -313,9 +319,5 @@ class _StatusLabel extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  String _formatDate(DateTime d) {
-    return '${d.day}/${d.month}';
   }
 }

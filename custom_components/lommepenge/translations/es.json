@@ -1,0 +1,209 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurar Lommepenge",
+        "description": "Home Assistant guarda las tareas y la paga de la familia. La app de la pantalla familiar, los móviles de los padres y las tabletas de los niños se conecta aquí.",
+        "data": {
+          "family_name": "Nombre de la familia",
+          "pin": "PIN de padres (4-8 dígitos)",
+          "language": "Idioma",
+          "currency": "Moneda"
+        },
+        "data_description": {
+          "pin": "Desbloquea la parte de padres de la app en la pantalla familiar y los móviles de los padres.",
+          "language": "Idioma de los nombres de las entidades, los motivos de bloqueo, las notificaciones y la página de instalación, independiente del idioma de Home Assistant. Cada dispositivo elige su propio idioma en la app.",
+          "currency": "Escrita como quieres que se muestre, p. ej. EUR, €, DKK o USD."
+        }
+      }
+    },
+    "error": {
+      "name_required": "Escribe un nombre.",
+      "invalid_pin": "El PIN debe tener 4-8 dígitos.",
+      "invalid_currency": "Escribe una moneda (máximo 10 caracteres)."
+    },
+    "abort": {
+      "single_instance_allowed": "Lommepenge ya está configurado."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Ajustes de Lommepenge",
+        "description": "Home Assistant descarga la app de las versiones publicadas de este repositorio y entrega las nuevas versiones a los dispositivos de la familia. Solo hace falta un token para un repositorio privado.",
+        "data": {
+          "language": "Idioma",
+          "currency": "Moneda",
+          "github_token": "Token de GitHub (solo para un repositorio privado)",
+          "github_repo": "Repositorio con las versiones de la app",
+          "pin": "Nuevo PIN de padres (vacío = mantener)"
+        },
+        "data_description": {
+          "language": "Idioma de los nombres de las entidades, los motivos de bloqueo, las notificaciones y la página de instalación, independiente del idioma de Home Assistant.",
+          "currency": "Escrita como quieres que se muestre, p. ej. EUR, €, DKK o USD."
+        }
+      }
+    },
+    "error": {
+      "invalid_token": "GitHub rechazó el token, o no tiene acceso al repositorio.",
+      "cannot_connect": "No se pudo conectar con GitHub.",
+      "invalid_pin": "El PIN debe tener 4-8 dígitos.",
+      "invalid_currency": "Escribe una moneda (máximo 10 caracteres)."
+    }
+  },
+  "config_subentries": {
+    "device": {
+      "entry_type": "Dispositivo",
+      "initiate_flow": {
+        "user": "Añadir dispositivo"
+      },
+      "step": {
+        "user": {
+          "title": "Añadir dispositivo",
+          "description": "Añade la pantalla familiar, el móvil de un padre o la tableta de un niño.",
+          "data": {
+            "name": "Nombre",
+            "role": "Rol"
+          }
+        },
+        "child": {
+          "title": "¿Qué niño?",
+          "description": "La tableta solo mostrará las tareas de este niño.",
+          "data": {
+            "child_id": "Niño"
+          }
+        },
+        "pair": {
+          "title": "Añadir {name}",
+          "description": "Código: **{code}** (válido una vez, hasta las {expires})\n\nInstala la app en el dispositivo, ábrela, elige Conectar con código e introduce el código. La app encuentra Home Assistant por sí sola.\n\n[Abrir la página con la descarga de la app y el código QR]({install_url})\n\nConfirma cuando el dispositivo esté conectado."
+        },
+        "reconfigure": {
+          "title": "Nuevo código para {name}",
+          "description": "Código: **{code}** (válido una vez, hasta las {expires})\n\nÚsalo después de reinstalar la app: Conectar con código en la app. La conexión anterior se detiene cuando el dispositivo vuelve a conectarse.\n\n[Abrir la página con la descarga de la app y el código QR]({install_url})"
+        }
+      },
+      "error": {
+        "name_required": "Escribe un nombre."
+      },
+      "abort": {
+        "not_loaded": "Lommepenge no se está ejecutando.",
+        "no_children": "Primero crea el niño en la app (en la pantalla familiar o en el móvil de un padre).",
+        "reconfigure_successful": "Listo."
+      }
+    }
+  },
+  "selector": {
+    "role": {
+      "options": {
+        "screen": "Pantalla familiar (todos los niños)",
+        "parent": "Móvil de un padre",
+        "child": "Tableta del niño (un niño)"
+      }
+    },
+    "language": {
+      "options": {
+        "en": "English",
+        "da": "Dansk",
+        "de": "Deutsch",
+        "es": "Español",
+        "fr": "Français"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "pending_approvals": {
+        "name": "Pendiente de aprobación"
+      },
+      "balance": {
+        "name": "Saldo"
+      },
+      "earned_this_week": {
+        "name": "Ganado esta semana"
+      },
+      "last_seen": {
+        "name": "Último contacto"
+      }
+    },
+    "binary_sensor": {
+      "restricted": {
+        "name": "Tableta bloqueada"
+      },
+      "overdue": {
+        "name": "Tarea atrasada"
+      }
+    },
+    "button": {
+      "suspend_restriction": {
+        "name": "Quitar bloqueo hoy"
+      }
+    },
+    "time": {
+      "default_due_time": {
+        "name": "Hora límite predeterminada"
+      },
+      "restriction_start": {
+        "name": "Bloqueo desde"
+      },
+      "restriction_end": {
+        "name": "Bloqueo hasta"
+      }
+    },
+    "number": {
+      "late_pause_minutes": {
+        "name": "Pausa si se hace tarde"
+      },
+      "warning_minutes": {
+        "name": "Aviso antes del límite"
+      },
+      "winter_from_week": {
+        "name": "Invierno desde la semana"
+      },
+      "winter_to_week": {
+        "name": "Invierno hasta la semana"
+      }
+    },
+    "update": {
+      "app": {
+        "name": "App"
+      }
+    }
+  },
+  "exceptions": {
+    "not_set_up": {
+      "message": "Lommepenge no está configurado."
+    }
+  },
+  "services": {
+    "approve": {
+      "name": "Aprobar tarea",
+      "description": "Aprueba una tarea realizada para que el importe se sume al saldo del niño.",
+      "fields": {
+        "completion_id": {
+          "name": "ID de realización",
+          "description": "completionId del evento lommepenge_event."
+        }
+      }
+    },
+    "reject": {
+      "name": "Rechazar tarea",
+      "description": "Rechaza una tarea realizada. El niño puede volver a hacerla.",
+      "fields": {
+        "completion_id": {
+          "name": "ID de realización",
+          "description": "completionId del evento lommepenge_event."
+        }
+      }
+    },
+    "suspend_restriction": {
+      "name": "Quitar bloqueo hoy",
+      "description": "Quita el bloqueo del niño durante el resto del día.",
+      "fields": {
+        "child_id": {
+          "name": "ID del niño",
+          "description": "El atributo child_id del sensor \"Tableta bloqueada\" del niño."
+        }
+      }
+    }
+  }
+}

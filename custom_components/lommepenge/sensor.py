@@ -1,4 +1,4 @@
-"""Sensorer: saldo pr. barn, godkendelser der venter, og enhedernes kontakt."""
+"""Sensors: balance per child, approvals waiting, and the devices' last contact."""
 
 from __future__ import annotations
 
@@ -34,8 +34,8 @@ async def async_setup_entry(
         coordinator,
         async_add_entities,
         lambda child_id: [
-            KronerSensor(coordinator, child_id, "balance", "balanceOre"),
-            KronerSensor(coordinator, child_id, "earned_this_week", "earnedThisWeekOre"),
+            AmountSensor(coordinator, child_id, "balance", "balanceOre"),
+            AmountSensor(coordinator, child_id, "earned_this_week", "earnedThisWeekOre"),
         ],
     )
     async_setup_app_device_entities(
@@ -44,7 +44,7 @@ async def async_setup_entry(
 
 
 class PendingApprovalsSensor(LommepengeEntity, SensorEntity):
-    """Antal opgaver der venter på en forælders godkendelse."""
+    """Number of tasks waiting for a parent's approval."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:clipboard-check-outline"
@@ -65,6 +65,9 @@ class PendingApprovalsSensor(LommepengeEntity, SensorEntity):
                     "child_id": p.get("childId"),
                     "child_name": p.get("childName"),
                     "task": p.get("taskTitle"),
+                    "amount": (p.get("amountOre") or 0) / 100,
+                    "currency": self.coordinator.runtime.currency,
+                    # Old name, kept for existing automations.
                     "amount_kr": (p.get("amountOre") or 0) / 100,
                     "completed_at": p.get("completedAt"),
                     "late": p.get("late", False),
@@ -74,11 +77,11 @@ class PendingApprovalsSensor(LommepengeEntity, SensorEntity):
         }
 
 
-class KronerSensor(LommepengeChildEntity, SensorEntity):
-    """Et beløb for ét barn (appen regner i øre)."""
+class AmountSensor(LommepengeChildEntity, SensorEntity):
+    """An amount for one child (the app counts in 1/100 of the currency),
+    in the currency chosen for the integration."""
 
     _attr_device_class = SensorDeviceClass.MONETARY
-    _attr_native_unit_of_measurement = "DKK"
     _attr_suggested_display_precision = 2
 
     def __init__(
@@ -90,6 +93,7 @@ class KronerSensor(LommepengeChildEntity, SensorEntity):
     ) -> None:
         super().__init__(coordinator, child_id, key)
         self._field = field
+        self._attr_native_unit_of_measurement = coordinator.runtime.currency
 
     @property
     def native_value(self) -> float | None:
@@ -100,7 +104,7 @@ class KronerSensor(LommepengeChildEntity, SensorEntity):
 
 
 class LastSeenSensor(LommepengeAppDeviceEntity, SensorEntity):
-    """Hvornår enheden sidst hentede data fra HA (tom = ikke parret endnu)."""
+    """When the device last fetched data from HA (empty = not paired yet)."""
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_entity_category = EntityCategory.DIAGNOSTIC

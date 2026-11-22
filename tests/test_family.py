@@ -1,4 +1,4 @@
-"""Familiens handlinger - samme regler og fejlbeskeder som appens TaskRepository."""
+"""The family's actions - the same rules and error messages as the app's TaskRepository."""
 
 from __future__ import annotations
 
@@ -19,12 +19,12 @@ def act(family: Family, action_type: str, now: datetime = NOW, **payload):
 def family() -> Family:
     family = Family()
     act(family, "add_child", id="emma", name="Emma")
-    act(family, "add_child", id="oskar", name="Oskar")
+    act(family, "add_child", id="oscar", name="Oscar")
     act(
         family,
         "create_task",
         id="t1",
-        title="Tøm opvaskeren",
+        title="Empty the dishwasher",
         amountOre=500,
         recurrence="daily",
         mandatory=True,
@@ -35,19 +35,19 @@ def family() -> Family:
 def test_complete_approve_and_balance(family: Family) -> None:
     completion = act(family, "complete_task", taskId="t1", childId="emma")
     assert completion["status"] == "pending" and completion["late"] is False
-    # Kan ikke markeres igen mens den venter.
-    with pytest.raises(FamilyError, match="kan ikke markeres udført"):
+    # Cannot be marked again while it is waiting.
+    with pytest.raises(FamilyError, match="cannot be marked as done"):
         act(family, "complete_task", taskId="t1", childId="emma")
-    # ... men søskende kan stadig lave den.
-    act(family, "complete_task", taskId="t1", childId="oskar")
+    # ... but siblings can still do it.
+    act(family, "complete_task", taskId="t1", childId="oscar")
 
     act(family, "approve_completion", completionId=completion["id"])
     assert family.balance_ore("emma") == 500
     assert family.earned_this_week_ore("emma", NOW) == 500
-    with pytest.raises(FamilyError, match="allerede behandlet"):
+    with pytest.raises(FamilyError, match="already been handled"):
         act(family, "reject_completion", completionId=completion["id"])
 
-    act(family, "adjust_balance", childId="emma", amountOre=-200, note="Slik")
+    act(family, "adjust_balance", childId="emma", amountOre=-200, note="Sweets")
     assert family.balance_ore("emma") == 300
     act(family, "mark_paid_out", childId="emma")
     assert family.balance_ore("emma") == 0
@@ -55,7 +55,7 @@ def test_complete_approve_and_balance(family: Family) -> None:
 
 def test_late_uses_ha_clock(family: Family) -> None:
     evening = NOW.replace(hour=19)
-    # Tablettens eget tidspunkt ignoreres: HA's ur afgør om det er for sent.
+    # The tablet's own time is ignored: HA's clock decides whether it is late.
     completion = act(
         family,
         "complete_task",
@@ -80,17 +80,17 @@ def test_assignment_and_weekdays(family: Family) -> None:
         family,
         "create_task",
         id="t2",
-        title="Fodre katten",
+        title="Feed the cat",
         amountOre=200,
         recurrence="daily",
-        assignedChildIds=["oskar"],
+        assignedChildIds=["oscar"],
         activeWeekdays=[1],
     )
-    with pytest.raises(FamilyError, match="ikke tildelt"):
+    with pytest.raises(FamilyError, match="not assigned"):
         act(family, "complete_task", taskId="t2", childId="emma")
     tuesday = NOW + timedelta(days=1)
-    with pytest.raises(FamilyError, match="kan ikke markeres"):
-        act(family, "complete_task", now=tuesday, taskId="t2", childId="oskar")
+    with pytest.raises(FamilyError, match="cannot be marked"):
+        act(family, "complete_task", now=tuesday, taskId="t2", childId="oscar")
 
 
 def test_update_task_keeps_missing_and_clears_null(family: Family) -> None:
@@ -98,7 +98,7 @@ def test_update_task_keeps_missing_and_clears_null(family: Family) -> None:
         family,
         "update_task",
         id="t1",
-        title="Tøm opvasker",
+        title="Empty dishwasher",
         amountOre=600,
         recurrence="daily",
         activeWeekdays=[1, 3],
@@ -106,16 +106,16 @@ def test_update_task_keeps_missing_and_clears_null(family: Family) -> None:
     )
     task = family.task("t1")
     assert task["activeWeekdays"] == [1, 3] and task["dueTime"] == "17:30"
-    assert task["mandatory"] is True  # mangler i payload -> beholdt
+    assert task["mandatory"] is True  # missing in payload -> kept
 
-    act(family, "update_task", id="t1", title="Tøm", amountOre=600, recurrence="daily")
-    assert family.task("t1")["activeWeekdays"] == [1, 3]  # nøgle mangler -> behold
+    act(family, "update_task", id="t1", title="Empty", amountOre=600, recurrence="daily")
+    assert family.task("t1")["activeWeekdays"] == [1, 3]  # key missing -> keep
 
     act(
         family,
         "update_task",
         id="t1",
-        title="Tøm",
+        title="Empty",
         amountOre=600,
         recurrence="daily",
         activeWeekdays=None,
@@ -124,35 +124,52 @@ def test_update_task_keeps_missing_and_clears_null(family: Family) -> None:
     assert family.task("t1")["activeWeekdays"] is None
     assert family.task("t1")["dueTime"] is None
 
-    with pytest.raises(FamilyError, match="findes ikke"):
+    with pytest.raises(FamilyError, match="no longer exists"):
         act(family, "update_task", id="nope", title="x", amountOre=1, recurrence="once")
 
 
 def test_children_and_settings(family: Family) -> None:
-    act(family, "rename_child", id="emma", name="Emilie")
-    assert family.child("emma")["name"] == "Emilie"
-    act(family, "delete_child", id="oskar")
+    act(family, "rename_child", id="emma", name="Emily")
+    assert family.child("emma")["name"] == "Emily"
+    act(family, "delete_child", id="oscar")
     act(family, "delete_child", id="emma")
-    assert family.children == []  # det sidste barn kan også slettes
+    assert family.children == []  # the last child can be deleted too
 
     act(family, "set_setting", key="latePauseMinutes", value=20)
     assert family.settings["latePauseMinutes"] == 20
-    with pytest.raises(FamilyError, match="mellem 0 og 240"):
+    with pytest.raises(FamilyError, match="between 0 and 240"):
         act(family, "set_setting", key="latePauseMinutes", value=999)
-    with pytest.raises(FamilyError, match="Ukendt handling"):
+    with pytest.raises(FamilyError, match="Unknown action"):
         act(family, "hack_the_planet")
+
+
+def test_errors_are_translated(family: Family) -> None:
+    with pytest.raises(FamilyError) as err:
+        act(family, "set_setting", key="latePauseMinutes", value=999)
+    assert err.value.translate("da") == "latePauseMinutes skal være mellem 0 og 240: 999"
+    assert err.value.translate("de").startswith("latePauseMinutes muss zwischen 0 und 240")
+    # Unknown language -> English.
+    assert err.value.translate("xx") == str(err.value)
 
 
 def test_summary_and_state(family: Family) -> None:
     act(family, "complete_task", taskId="t1", childId="emma")
     evening = NOW.replace(hour=19)
-    summary = family.summary("Familien", evening)
-    emma, oskar = summary["children"]
-    assert emma["restricted"] is False  # har markeret udført
-    assert oskar["restricted"] is True
-    assert summary["pending"][0]["childName"] == "Emma"
-    assert summary["pending"][0]["taskTitle"] == "Tøm opvaskeren"
+    summary = family.summary("The Family", evening)
+    emma, oscar = summary["children"]
+    assert emma["restricted"] is False  # has marked it as done
+    assert oscar["restricted"] is True
+    assert oscar["reason"] == "Missing: Empty the dishwasher (due 18:00)"
+    pending = summary["pending"][0]
+    assert pending["childName"] == "Emma"
+    assert pending["taskTitle"] == "Empty the dishwasher"
 
-    state = family.state_json("Familien", evening)
-    assert [c["name"] for c in state["children"]] == ["Emma", "Oskar"]
+    assert pending["message"] == 'Emma did "Empty the dishwasher" – 5 DKK'
+
+    danish = family.summary("The Family", evening, "da", "kr")
+    assert danish["children"][1]["reason"] == "Mangler: Empty the dishwasher (frist 18:00)"
+    assert danish["pending"][0]["message"] == 'Emma har lavet "Empty the dishwasher" – 5 kr'
+
+    state = family.state_json("The Family", evening)
+    assert [c["name"] for c in state["children"]] == ["Emma", "Oscar"]
     assert state["familySettings"]["defaultDueTime"] == "18:00"

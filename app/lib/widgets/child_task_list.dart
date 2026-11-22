@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../logic/follow_up.dart';
 import '../models/child.dart';
 import '../models/family_settings.dart';
@@ -9,14 +10,14 @@ import 'amount_text.dart';
 import 'task_card.dart';
 import 'weekly_progress.dart';
 
-/// Opgaverne for ÉT barn, i appens almindelige "hvad skal gøres nu"-
-/// rækkefølge. Bruges af barnets tablet (hele skærmen) og af
-/// køleskabsskærmens kolonne pr. barn.
+/// The tasks for ONE child, in the app's usual "what needs doing now" order.
+/// Used by the child's tablet (the whole screen) and by the family screen's
+/// column per child.
 List<Task> tasksForChild(AppState appState, String childId) => appState.tasks
     .where((t) => appState.resolvedChildIdsFor(t).contains(childId))
     .toList();
 
-/// Markerer [task] udført for [childId] og viser resultatet som SnackBar.
+/// Marks [task] as done for [childId] and shows the result as a SnackBar.
 Future<void> completeTaskWithFeedback(
   BuildContext context,
   AppState appState,
@@ -24,18 +25,17 @@ Future<void> completeTaskWithFeedback(
   String childId,
 ) async {
   final messenger = ScaffoldMessenger.of(context);
+  final sent = context.l10n.sentForApproval;
   try {
     await appState.completeTask(task, childId: childId);
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Sendt til godkendelse!')),
-    );
+    messenger.showSnackBar(SnackBar(content: Text(sent)));
   } catch (e) {
     messenger.showSnackBar(SnackBar(content: Text('$e')));
   }
 }
 
-/// Opgavekort for ét barn - kun barnets egen status og knap, også for
-/// opgaver der er delt mellem flere børn.
+/// Task card for one child - only the child's own status and button, also
+/// for tasks shared between several children.
 class ChildTaskCard extends StatelessWidget {
   final AppState appState;
   final Child child;
@@ -66,9 +66,9 @@ class ChildTaskCard extends StatelessWidget {
   }
 }
 
-/// Besked til barnet om spærring eller en frist der nærmer sig. Vises
-/// øverst på barnets tablet og i barnets kolonne på køleskabet. Tom, når
-/// der intet er at sige.
+/// Message to the child about a restriction or an approaching deadline. Shown
+/// at the top of the child's tablet and in the child's column on the family
+/// screen. Empty when there is nothing to say.
 class FollowUpBanner extends StatelessWidget {
   final ChildFollowUp? followUp;
   final FamilySettings settings;
@@ -83,24 +83,24 @@ class FollowUpBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final f = followUp;
     if (f == null || f.suspended) return const SizedBox.shrink();
+    final l10n = context.l10n;
 
     if (f.restricted) {
       final pauseUntil = f.latePauseUntil;
       final String detail;
       if (f.overdue.isNotEmpty) {
         final list = f.overdue.map((d) => d.task.title).join(', ');
-        detail = 'Lav først: $list. Så låses de op igen.';
+        detail = l10n.restrictedDoFirst(list);
       } else if (pauseUntil != null) {
         final left = pauseUntil.difference(DateTime.now()).inMinutes + 1;
-        detail = 'Opgaven er udført for sent, så der går $left '
-            'minut${left == 1 ? '' : 'ter'}, før din tablet bliver låst op igen.';
+        detail = l10n.restrictedLatePause(left);
       } else {
-        detail = f.reason ?? '';
+        detail = f.reason(l10n) ?? '';
       }
       return _Banner(
         color: Colors.red,
         icon: Icons.block,
-        title: 'Spil og YouTube er spærret',
+        title: l10n.restrictedTitle,
         text: detail,
       );
     }
@@ -110,9 +110,8 @@ class FollowUpBanner extends StatelessWidget {
       return _Banner(
         color: Colors.orange,
         icon: Icons.warning_amber,
-        title: 'Du er bagud',
-        text: '$list skulle være lavet. Spil og YouTube spærres fra kl. '
-            '${settings.restrictionStart}, hvis det ikke er gjort.',
+        title: l10n.behindTitle,
+        text: l10n.behindBody(list, settings.restrictionStart),
       );
     }
 
@@ -123,9 +122,8 @@ class FollowUpBanner extends StatelessWidget {
         return _Banner(
           color: Colors.orange,
           icon: Icons.alarm,
-          title: 'Husk: ${next.task.title}',
-          text: 'Skal være lavet kl. ${next.dueLabel}, ellers spærres spil og '
-              'YouTube.',
+          title: l10n.reminderTitle(next.task.title),
+          text: l10n.reminderBody(next.dueLabel),
         );
       }
     }
@@ -167,7 +165,7 @@ class _Banner extends StatelessWidget {
   }
 }
 
-/// Barnets navn, saldo og ugens fremskridt.
+/// The child's name, balance and the week's progress.
 class ChildSummaryCard extends StatelessWidget {
   final AppState appState;
   final Child child;
@@ -183,6 +181,7 @@ class ChildSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final l10n = context.l10n;
     return Card(
       color: Theme.of(context).colorScheme.primaryContainer,
       child: Padding(
@@ -198,13 +197,23 @@ class ChildSummaryCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              formatKr(appState.currentBalanceOreFor(child.id)),
+              formatAmount(
+                l10n,
+                appState.currentBalanceOreFor(child.id),
+                appState.currency,
+              ),
               style: (large ? text.displaySmall : text.headlineSmall)
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             Text(
-              'Denne uge: ${formatKr(appState.earnedThisWeekOreFor(child.id))}',
+              l10n.thisWeekAmount(
+                formatAmount(
+                  l10n,
+                  appState.earnedThisWeekOreFor(child.id),
+                  appState.currency,
+                ),
+              ),
               style: text.bodySmall,
             ),
             const SizedBox(height: 8),

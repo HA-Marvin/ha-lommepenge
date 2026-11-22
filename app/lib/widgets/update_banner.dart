@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../providers/app_state.dart';
 
-/// Vises øverst, når Home Assistant har en nyere version af appen klar.
-/// "Opdater" henter den fra HA og beder Android installere den.
+/// Shown at the top when Home Assistant has a newer version of the app ready.
+/// "Update" fetches it from HA and asks Android to install it.
 class UpdateBanner extends StatelessWidget {
   final AppState appState;
   const UpdateBanner({super.key, required this.appState});
@@ -15,6 +16,7 @@ class UpdateBanner extends StatelessWidget {
     if (update == null && message == null) return const SizedBox.shrink();
     final progress = appState.updateProgress;
     final busy = progress != null;
+    final l10n = context.l10n;
 
     return MaterialBanner(
       leading: const Icon(Icons.system_update),
@@ -22,11 +24,7 @@ class UpdateBanner extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            update == null
-                ? message!
-                : 'Ny version ${update.version} er klar.',
-          ),
+          Text(update == null ? message! : l10n.newVersionReady(update.version)),
           if (update != null && message != null) ...[
             const SizedBox(height: 4),
             Text(message, style: Theme.of(context).textTheme.bodySmall),
@@ -41,7 +39,7 @@ class UpdateBanner extends StatelessWidget {
         if (update != null)
           FilledButton(
             onPressed: busy ? null : appState.installUpdate,
-            child: const Text('Opdater'),
+            child: Text(l10n.update),
           )
         else
           const SizedBox.shrink(),

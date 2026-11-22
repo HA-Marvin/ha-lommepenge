@@ -1,4 +1,4 @@
-"""Tidspunkter fra familiens indstillinger - kan rettes direkte fra HA."""
+"""Times from the family's settings - can be changed directly from HA."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .coordinator import LommepengeConfigEntry, LommepengeCoordinator, LommepengeError
 from .entity import LommepengeEntity
 
-# HA-nøgle -> appens indstillingsnøgle (se FamilySettings i appen).
+# HA key -> the app's setting key (see FamilySettings in the app).
 TIME_SETTINGS = {
     "default_due_time": "defaultDueTime",
     "restriction_start": "restrictionStart",
@@ -59,4 +59,5 @@ class SettingTime(LommepengeEntity, TimeEntity):
                 {"key": self._setting, "value": f"{value.hour:02d}:{value.minute:02d}"},
             )
         except LommepengeError as err:
-            raise HomeAssistantError(f"Lommepenge: {err}") from err
+            language = self.coordinator.runtime.language
+            raise HomeAssistantError(f"Lommepenge: {err.translate(language)}") from err

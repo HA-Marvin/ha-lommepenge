@@ -6,10 +6,10 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// Appens faste signeringsnøgle. key.properties ligger kun lokalt og i
-// GitHub Actions (aldrig i git). Uden den signeres med debug-nøglen, så
-// `flutter run --release` stadig virker - men en sådan build kan ikke
-// installeres oven på en release-signeret app.
+// The app's fixed signing key. key.properties only exists locally and in
+// GitHub Actions (never in git). Without it the build is signed with the
+// debug key, so `flutter run --release` still works - but such a build cannot
+// be installed on top of a release-signed app.
 val keyProperties = Properties().apply {
     val file = rootProject.file("key.properties")
     if (file.exists()) file.inputStream().use { load(it) }

@@ -1,4 +1,4 @@
-"""Appens HTTP-API: installation, parring, signerede kald og roller."""
+"""The app's HTTP API: installation, pairing, signed requests and roles."""
 
 from __future__ import annotations
 
@@ -11,14 +11,14 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 
 from custom_components.lommepenge.const import DOMAIN, ROLE_CHILD, ROLE_PARENT, ROLE_SCREEN
 
-from .conftest import GITHUB, AppClient, add_child, paired_app, setup_entry
+from .conftest import GITHUB, AppClient, add_child, family_entry, paired_app, setup_entry
 
 DOWNLOADS = "https://github.com/HA-Marvin/ha-lommepenge/releases/download"
 SHA = "a" * 64
 
 
 def mock_github(aioclient_mock: AiohttpClientMocker, tag: str = "v1.1.0") -> None:
-    """En release med app: hentes uden nøgle via de almindelige download-links."""
+    """A release with the app: fetched without a token via the plain download links."""
     version = tag.lstrip("v")
     aioclient_mock.clear_requests()
     aioclient_mock.get(
@@ -26,7 +26,7 @@ def mock_github(aioclient_mock: AiohttpClientMocker, tag: str = "v1.1.0") -> Non
         json={
             "tag_name": tag,
             "html_url": f"https://github.com/HA-Marvin/lommepenge-app/releases/{tag}",
-            "body": "Nyt",
+            "body": "New",
             "assets": [
                 {
                     "name": f"lommepenge-{version}.apk",
@@ -55,20 +55,21 @@ async def test_install_page_and_pairing(
 ) -> None:
     runtime = await setup_entry(hass, config_entry)
     client = await hass_client_no_auth()
-    token, _ = runtime.async_create_pairing("dev-1", "Køleskab", ROLE_SCREEN, None)
+    token, _ = runtime.async_create_pairing("dev-1", "Kitchen", ROLE_SCREEN, None)
 
-    # Åbnet på computeren (fra linket i HA): kode, QR-kode og forklaring.
+    # Opened on the computer (from the link in HA): code, QR code and instructions.
     page = await client.get(f"/api/lommepenge/install/{token}")
     html = await page.text()
     assert page.status == 200
-    assert "Tilføj Køleskab" in html and "Fælles skærm" in html
+    assert "Add Kitchen" in html and "Family screen" in html
+    assert '<html lang="en">' in html
     assert f'<p class="code">{token}</p>' in html
     assert "<svg" in html
-    assert "scheme=lommepenge" not in html  # "Åbn appen" kun på Android
-    # Ingen app-release endnu: forklaring i stedet for download-knap.
-    assert "ikke kunnet hente appen" in html
+    assert "scheme=lommepenge" not in html  # "Open the app" only on Android
+    # No app release yet: an explanation instead of a download button.
+    assert "has not been able to fetch the app" in html
 
-    # Åbnet på Android (via QR-koden): også "Åbn appen og forbind".
+    # Opened on Android (via the QR code): also "Open the app and connect".
     page = await client.get(
         f"/api/lommepenge/install/{token}",
         headers={"User-Agent": "Mozilla/5.0 (Linux; Android 14) Chrome/130"},
@@ -82,12 +83,12 @@ async def test_install_page_and_pairing(
     app = AppClient(client)
     paired = await app.pair(token)
     assert paired["status"] == 200
-    assert paired["role"] == ROLE_SCREEN and paired["familyName"] == "Familien"
+    assert paired["role"] == ROLE_SCREEN and paired["familyName"] == "The Family"
 
-    # Linket virker kun én gang.
+    # The code only works once.
     assert (await AppClient(client).pair(token))["status"] == 410
     page = await client.get(f"/api/lommepenge/install/{token}")
-    assert "udløbet" in await page.text()
+    assert "used or expired" in await page.text()
 
     response = await app.state()
     state = await response.json()
@@ -95,6 +96,20 @@ async def test_install_page_and_pairing(
     assert state["device"]["role"] == ROLE_SCREEN
     assert state["pinHash"] == config_entry.data["pin_hash"]
     assert state["appUpdate"] is None
+    assert state["currency"] == "DKK"
+
+
+async def test_install_page_in_chosen_language(
+    hass: HomeAssistant, hass_client_no_auth
+) -> None:
+    entry = family_entry("de")
+    runtime = await setup_entry(hass, entry)
+    client = await hass_client_no_auth()
+    token, _ = runtime.async_create_pairing("dev-1", "Küche", ROLE_CHILD, None)
+    html = await (await client.get(f"/api/lommepenge/install/{token}")).text()
+    assert '<html lang="de">' in html
+    assert "Küche hinzufügen" in html and "Tablet des Kindes" in html
+    assert "Mit Code verbinden" in html
 
 
 async def test_signature_is_required(
@@ -102,7 +117,7 @@ async def test_signature_is_required(
 ) -> None:
     await setup_entry(hass, config_entry)
     client = await hass_client_no_auth()
-    app = await paired_app(hass, config_entry, client, "Mor", ROLE_PARENT)
+    app = await paired_app(hass, config_entry, client, "Mum", ROLE_PARENT)
 
     assert (await client.get("/api/lommepenge/state")).status == 401
 
@@ -112,7 +127,11 @@ async def test_signature_is_required(
 
     headers = app.headers("GET", "/api/lommepenge/state", b"")
     headers["X-Timestamp"] = str(int(time.time()) - 3600)
-    assert (await client.get("/api/lommepenge/state", headers=headers)).status == 401
+    response = await client.get("/api/lommepenge/state", headers=headers)
+    assert response.status == 401
+    assert (await response.json())["error"] == (
+        "The device's clock is wrong, or the request is too old."
+    )
 
 
 async def test_parent_runs_the_family(
@@ -120,22 +139,45 @@ async def test_parent_runs_the_family(
 ) -> None:
     await setup_entry(hass, config_entry)
     client = await hass_client_no_auth()
-    app = await paired_app(hass, config_entry, client, "Mor", ROLE_PARENT)
+    app = await paired_app(hass, config_entry, client, "Mum", ROLE_PARENT)
 
     assert (await app.action("add_child", {"id": "emma", "name": "Emma"})).status == 200
     response = await app.action(
         "create_task",
-        {"id": "t1", "title": "Rede seng", "amountOre": 500, "recurrence": "daily"},
+        {"id": "t1", "title": "Make the bed", "amountOre": 500, "recurrence": "daily"},
     )
     state = await response.json()
-    assert [t["title"] for t in state["tasks"]] == ["Rede seng"]
+    assert [t["title"] for t in state["tasks"]] == ["Make the bed"]
 
     response = await app.action("complete_task", {"taskId": "t1", "childId": "nobody"})
     assert response.status == 400
-    assert (await response.json())["error"] == "Opgaven er ikke tildelt dette barn."
+    assert (await response.json())["error"] == "The task is not assigned to this child."
 
     family = config_entry.runtime_data.family
     assert family.child("emma")["name"] == "Emma"
+
+
+async def test_errors_follow_the_apps_language(
+    hass: HomeAssistant, config_entry: MockConfigEntry, hass_client_no_auth
+) -> None:
+    """The integration is English, but each app gets errors in its own language."""
+    await setup_entry(hass, config_entry)
+    client = await hass_client_no_auth()
+    danish = await paired_app(hass, config_entry, client, "Mor", ROLE_PARENT, language="da")
+    french = await paired_app(hass, config_entry, client, "Papa", ROLE_PARENT, language="fr-FR")
+
+    response = await danish.action("complete_task", {"taskId": "t1", "childId": "nobody"})
+    assert (await response.json())["error"] == "Opgaven findes ikke længere."
+    response = await french.action("complete_task", {"taskId": "t1", "childId": "nobody"})
+    assert (await response.json())["error"] == "La tâche n'existe plus."
+    response = await danish.action("hack", {})
+    assert (await response.json())["error"] == "Ukendt handling: hack"
+
+    # A browser's/phone's own language is never used - only the app's choice.
+    result = await AppClient(client).client.post(
+        "/api/lommepenge/pair", json={"token": "nope"}, headers={"Accept-Language": "da"}
+    )
+    assert (await result.json())["error"].startswith("The code is wrong")
 
 
 async def test_child_tablet_is_limited(
@@ -143,22 +185,26 @@ async def test_child_tablet_is_limited(
 ) -> None:
     runtime = await setup_entry(hass, config_entry)
     await add_child(runtime, "emma", "Emma")
-    await add_child(runtime, "oskar", "Oskar")
+    await add_child(runtime, "oscar", "Oscar")
     await runtime.async_apply(
         {
             "type": "create_task",
-            "payload": {"id": "t1", "title": "Rede seng", "amountOre": 500, "recurrence": "daily"},
+            "payload": {"id": "t1", "title": "Make the bed", "amountOre": 500, "recurrence": "daily"},
         }
     )
     client = await hass_client_no_auth()
-    tablet = await paired_app(hass, config_entry, client, "Emmas tablet", ROLE_CHILD, "emma")
+    tablet = await paired_app(hass, config_entry, client, "Emma's tablet", ROLE_CHILD, "emma")
 
     state = await (await tablet.state()).json()
     assert [c["name"] for c in state["children"]] == ["Emma"]
     assert "pinHash" not in state
 
     assert (await tablet.action("complete_task", {"taskId": "t1", "childId": "emma"})).status == 200
-    assert (await tablet.action("complete_task", {"taskId": "t1", "childId": "oskar"})).status == 403
+    response = await tablet.action("complete_task", {"taskId": "t1", "childId": "oscar"})
+    assert response.status == 403
+    assert (await response.json())["error"] == (
+        "This device is not allowed to perform this action."
+    )
     pending = config_entry.runtime_data.family.data["completions"][0]
     response = await tablet.action("approve_completion", {"completionId": pending["id"]})
     assert response.status == 403
@@ -170,7 +216,7 @@ async def test_removed_device_is_revoked(
 ) -> None:
     await setup_entry(hass, config_entry)
     client = await hass_client_no_auth()
-    app = await paired_app(hass, config_entry, client, "Mor", ROLE_PARENT)
+    app = await paired_app(hass, config_entry, client, "Mum", ROLE_PARENT)
     assert (await app.state()).status == 200
 
     subentry_id = next(iter(config_entry.subentries))
@@ -186,10 +232,10 @@ async def test_unfinished_pairing_expires(
 ) -> None:
     runtime = await setup_entry(hass, config_entry)
     client = await hass_client_no_auth()
-    token, _ = runtime.async_create_pairing("dev-x", "Glemt", ROLE_PARENT, None)
+    token, _ = runtime.async_create_pairing("dev-x", "Forgotten", ROLE_PARENT, None)
     app = AppClient(client)
     await app.pair(token)
-    # "Tilføj enhed" blev aldrig gjort færdig i HA.
+    # "Add device" was never finished in HA.
     freezer.tick(60 * 20)
     runtime.async_sync_subentries()
     assert "dev-x" not in runtime.devices
@@ -201,22 +247,22 @@ async def test_app_download_and_update_info(
     hass_client_no_auth,
     aioclient_mock: AiohttpClientMocker,
 ) -> None:
-    # Integrationens eget, offentlige repo - ingen GitHub-nøgle.
+    # The integration's own, public repository - no GitHub token.
     mock_github(aioclient_mock)
     runtime = await setup_entry(hass, config_entry)
     client = await hass_client_no_auth()
 
     token, _ = runtime.async_create_pairing("dev-t", "Tablet", ROLE_PARENT, None)
     page = await (await client.get(f"/api/lommepenge/install/{token}")).text()
-    assert "Hent appen" in page and "1.1.0" in page
+    assert "Download the app" in page and "1.1.0" in page
 
     download = await client.get(f"/api/lommepenge/download/{token}/lommepenge-1.1.0.apk")
     assert download.status == 200
     assert download.content_type == "application/vnd.android.package-archive"
     assert await download.read() == b"APK!"
-    assert (await client.get("/api/lommepenge/download/forkert/x.apk")).status == 404
+    assert (await client.get("/api/lommepenge/download/wrong/x.apk")).status == 404
 
-    app = await paired_app(hass, config_entry, client, "Mor", ROLE_PARENT)
+    app = await paired_app(hass, config_entry, client, "Mum", ROLE_PARENT)
     state = await (await app.state()).json()
     assert state["appUpdate"] == {"version": "1.1.0", "versionCode": 10100, "sha256": SHA, "size": 4}
 
@@ -224,8 +270,8 @@ async def test_app_download_and_update_info(
     assert apk.status == 200 and await apk.read() == b"APK!"
     assert (await client.get("/api/lommepenge/apk")).status == 401
 
-    # Opdateringsentiteten viser at enheden kører 1.0.0 og 1.1.0 findes.
-    update = hass.states.get("update.mor_app")
+    # The update entity shows that the device runs 1.0.0 and 1.1.0 exists.
+    update = hass.states.get("update.mum_app")
     assert update.state == "on"
     assert update.attributes["installed_version"] == "1.0.0"
     assert update.attributes["latest_version"] == "1.1.0"
@@ -236,11 +282,11 @@ async def test_code_can_be_typed(
 ) -> None:
     runtime = await setup_entry(hass, config_entry)
     client = await hass_client_no_auth()
-    code, _ = runtime.async_create_pairing("dev-k", "Køleskab", ROLE_SCREEN, None)
+    code, _ = runtime.async_create_pairing("dev-k", "Kitchen", ROLE_SCREEN, None)
     assert len(code) == 8 and code.isalnum() and code.isupper()
     assert not set(code) & set("01IO")
 
-    # Små bogstaver og bindestreg som en person taster den.
+    # Lower case and a dash, the way a person types it.
     typed = f"{code[:4].lower()}-{code[4:].lower()}"
     assert (await AppClient(client).pair(typed))["status"] == 200
 
@@ -250,13 +296,15 @@ async def test_wrong_codes_are_rate_limited(
 ) -> None:
     runtime = await setup_entry(hass, config_entry)
     client = await hass_client_no_auth()
-    code, _ = runtime.async_create_pairing("dev-k", "Køleskab", ROLE_SCREEN, None)
+    code, _ = runtime.async_create_pairing("dev-k", "Kitchen", ROLE_SCREEN, None)
     for _ in range(10):
-        assert (await AppClient(client).pair("FORKERT1"))["status"] == 410
-    # Nu afvises også den rigtige kode et stykke tid.
+        assert (await AppClient(client).pair("WRONG234"))["status"] == 410
+    # Now the right code is also refused for a while.
     result = await AppClient(client).pair(code)
     assert result["status"] == 429
-    assert "Vent fem minutter" in result["error"]
+    assert "Wait five minutes" in result["error"]
+    result = await AppClient(client, "es").pair(code)
+    assert "Espera cinco minutos" in result["error"]
 
 
 async def test_app_link_without_code(
@@ -267,7 +315,7 @@ async def test_app_link_without_code(
 ) -> None:
     await setup_entry(hass, config_entry)
     client = await hass_client_no_auth()
-    # Ingen release endnu.
+    # No release yet.
     assert (await client.get("/api/lommepenge/app.apk")).status == 404
 
     mock_github(aioclient_mock)
@@ -282,14 +330,15 @@ async def test_home_page_from_ha(
     hass_client_no_auth,
     aioclient_mock: AiohttpClientMocker,
 ) -> None:
-    """'Besøg' på familiens enhed i HA fører til appen og vejledningen."""
+    """'Visit' on the family's device in HA leads to the app and instructions."""
     mock_github(aioclient_mock)
     await setup_entry(hass, config_entry)
     device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, config_entry.entry_id)})
     assert device.configuration_url.endswith(":8123/api/lommepenge")
+    assert device.model == "Family"
 
     client = await hass_client_no_auth()
     html = await (await client.get("/api/lommepenge")).text()
-    assert "Hent appen (.apk, version 1.1.0)" in html
+    assert "Download the app (.apk, version 1.1.0)" in html
     assert 'href="/api/lommepenge/app.apk"' in html
-    assert "Tilføj enhed" in html
+    assert "Add device" in html

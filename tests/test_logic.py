@@ -1,4 +1,4 @@
-"""Reglerne - samme forventninger som appens follow_up_test/task_balance_test."""
+"""The rules - the same expectations as the app's follow_up_test/task_balance_test."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ MONDAY = datetime(2026, 11, 23, 12, 0)
 def task(**fields):
     return {
         "id": "t1",
-        "title": "Tøm opvaskeren",
+        "title": "Empty the dishwasher",
         "amountOre": 500,
         "recurrence": "daily",
         "active": True,
@@ -58,7 +58,7 @@ def test_availability_rules() -> None:
     )
     approved_today = [completion("approved", MONDAY.replace(hour=8))]
     assert logic.compute_availability(daily, approved_today, MONDAY) == logic.DONE_TODAY
-    # En afvist udførelse blokerer ikke.
+    # A rejected completion does not block.
     rejected = [completion("rejected", MONDAY.replace(hour=8))]
     assert logic.compute_availability(daily, rejected, MONDAY) == logic.AVAILABLE
 
@@ -80,23 +80,40 @@ def test_follow_up_overdue_and_restricted() -> None:
     evening = MONDAY.replace(hour=19)
     result = logic.compute_follow_up([task()], [], SETTINGS, evening, None)
     assert result["restricted"] is True
-    assert result["overdue"] == [{"taskId": "t1", "title": "Tøm opvaskeren", "due": "18:00"}]
-    assert result["reason"] == "Mangler: Tøm opvaskeren (frist 18:00)"
+    assert result["overdue"] == [{"taskId": "t1", "title": "Empty the dishwasher", "due": "18:00"}]
+    assert result["reason"] == "Missing: Empty the dishwasher (due 18:00)"
 
-    # Før fristen: på listen, men ikke spærret.
+    # Before the deadline: on the list, but not restricted.
     afternoon = MONDAY.replace(hour=16)
     result = logic.compute_follow_up([task()], [], SETTINGS, afternoon, None)
     assert result["restricted"] is False
     assert result["dueToday"][0]["due"] == "18:00"
 
-    # Markeret udført (venter på godkendelse): spærringen ophæves.
+    # Marked as done (awaiting approval): the restriction is lifted.
     pending = [completion("pending", evening)]
     result = logic.compute_follow_up([task()], pending, SETTINGS, evening, None)
     assert result["overdue"] == []
 
-    # Valgfri opgaver følges ikke op.
+    # Optional tasks are not followed up.
     result = logic.compute_follow_up([task(mandatory=False)], [], SETTINGS, evening, None)
     assert result["overdue"] == []
+
+
+def test_follow_up_reason_in_each_language() -> None:
+    evening = MONDAY.replace(hour=19)
+    reasons = {
+        language: logic.compute_follow_up([task()], [], SETTINGS, evening, None, language)[
+            "reason"
+        ]
+        for language in ("en", "da", "de", "es", "fr")
+    }
+    assert reasons == {
+        "en": "Missing: Empty the dishwasher (due 18:00)",
+        "da": "Mangler: Empty the dishwasher (frist 18:00)",
+        "de": "Fehlt: Empty the dishwasher (fällig 18:00)",
+        "es": "Falta: Empty the dishwasher (límite 18:00)",
+        "fr": "Manquant : Empty the dishwasher (échéance 18:00)",
+    }
 
 
 def test_follow_up_window_and_suspension() -> None:
@@ -107,7 +124,7 @@ def test_follow_up_window_and_suspension() -> None:
     evening = MONDAY.replace(hour=19)
     result = logic.compute_follow_up([task()], [], SETTINGS, evening, "2026-11-23")
     assert result["suspended"] is True and result["restricted"] is False
-    # En ophævelse fra i går gælder ikke i dag.
+    # A suspension from yesterday does not apply today.
     result = logic.compute_follow_up([task()], [], SETTINGS, evening, "2026-11-22")
     assert result["restricted"] is True
 
@@ -117,7 +134,7 @@ def test_late_completion_gives_pause() -> None:
     late = [completion("pending", done, late=True)]
     result = logic.compute_follow_up([task()], late, SETTINGS, done.replace(minute=35), None)
     assert result["restricted"] is True
-    assert result["reason"] == "Opgaven er udført for sent - låses op kl. 18:40"
+    assert result["reason"] == "The task was done late - unlocks at 18:40"
 
     result = logic.compute_follow_up([task()], late, SETTINGS, done.replace(minute=41), None)
     assert result["restricted"] is False
@@ -140,8 +157,8 @@ def test_settings_validation() -> None:
             logic.validate_setting(key, value)
         except ValueError:
             continue
-        raise AssertionError(f"{key}={value} burde fejle")
-    assert logic.settings_from({"latePauseMinutes": "øv", "warningMinutes": 30}) == {
+        raise AssertionError(f"{key}={value} should fail")
+    assert logic.settings_from({"latePauseMinutes": "oops", "warningMinutes": 30}) == {
         **SETTINGS,
         "warningMinutes": 30,
     }
@@ -152,21 +169,21 @@ def test_child_scope() -> None:
         {"type": "complete_task", "payload": {"childId": "emma"}}, "emma"
     )
     assert not logic.is_action_allowed_for_child(
-        {"type": "complete_task", "payload": {"childId": "oskar"}}, "emma"
+        {"type": "complete_task", "payload": {"childId": "oscar"}}, "emma"
     )
     assert not logic.is_action_allowed_for_child(
         {"type": "approve_completion", "payload": {"childId": "emma"}}, "emma"
     )
     state = {
-        "children": [{"id": "emma"}, {"id": "oskar"}],
+        "children": [{"id": "emma"}, {"id": "oscar"}],
         "tasks": [
             {"id": "a", "assignedChildIds": None},
-            {"id": "b", "assignedChildIds": ["oskar"]},
+            {"id": "b", "assignedChildIds": ["oscar"]},
         ],
-        "completions": [{"childId": "emma"}, {"childId": "oskar"}],
-        "balanceAdjustments": [{"childId": "oskar"}],
-        "paidOutOreByChild": {"emma": 100, "oskar": 200},
-        "restrictionSuspensions": {"oskar": "2026-11-23"},
+        "completions": [{"childId": "emma"}, {"childId": "oscar"}],
+        "balanceAdjustments": [{"childId": "oscar"}],
+        "paidOutOreByChild": {"emma": 100, "oscar": 200},
+        "restrictionSuspensions": {"oscar": "2026-11-23"},
     }
     filtered = logic.filter_state_for_child(state, "emma")
     assert filtered["children"] == [{"id": "emma"}]

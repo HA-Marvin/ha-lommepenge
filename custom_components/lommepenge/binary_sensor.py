@@ -1,4 +1,4 @@
-"""Binære sensorer pr. barn: spærret og forsinket."""
+"""Binary sensors per child: restricted and overdue."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def _tasks(items: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
 
 
 class RestrictedSensor(LommepengeChildEntity, BinarySensorEntity):
-    """Til = barnets tablet skal være spærret nu (styr fx en UniFi-regel)."""
+    """On = the child's tablet should be restricted now (e.g. drive a UniFi rule)."""
 
     _attr_icon = "mdi:tablet-cellphone"
 
@@ -61,7 +61,7 @@ class RestrictedSensor(LommepengeChildEntity, BinarySensorEntity):
 
 
 class OverdueSensor(LommepengeChildEntity, BinarySensorEntity):
-    """Til = barnet har en obligatorisk opgave, hvis frist er passeret."""
+    """On = the child has a mandatory task whose deadline has passed."""
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
 

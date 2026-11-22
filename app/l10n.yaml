@@ -1,0 +1,9 @@
+# The app's translations. app_en.arb is the template (English is the default
+# language); the other ARB files must have the same keys. The Dart code is
+# generated into lib/l10n/ by `flutter pub get` / `flutter gen-l10n`.
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+nullable-getter: false
+required-resource-attributes: false

@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/l10n.dart';
 import '../models/child.dart';
 import '../providers/app_state.dart';
 
-/// Forælder-fane til at administrere familiens børn: oprette, omdøbe og
-/// slette. Fejl fra `TaskRepository` vises herunder i en SnackBar.
+/// Parent tab to manage the family's children: create, rename and delete.
+/// Errors from `TaskRepository` are shown in a SnackBar.
 ///
-/// Har bevidst ingen egen [AppBar] - bruges indlejret som fane-indhold i
-/// [ParentHomeScreen], samme mønster som de øvrige faner der.
+/// Deliberately has no [AppBar] of its own - used embedded as tab content in
+/// [ParentHomeScreen], the same pattern as the other tabs there.
 class ChildrenScreen extends StatelessWidget {
   const ChildrenScreen({super.key});
 
@@ -16,12 +17,11 @@ class ChildrenScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final children = appState.children;
+    final l10n = context.l10n;
 
     return Scaffold(
       body: children.isEmpty
-          ? const Center(
-              child: Text('Ingen børn oprettet endnu. Tryk + for at oprette et barn.'),
-            )
+          ? Center(child: Text(l10n.noChildrenYet))
           : ListView.builder(
               itemCount: children.length,
               itemBuilder: (context, index) {
@@ -34,12 +34,12 @@ class ChildrenScreen extends StatelessWidget {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.edit_outlined),
-                        tooltip: 'Omdøb',
+                        tooltip: l10n.rename,
                         onPressed: () => _renameDialog(context, child),
                       ),
                       IconButton(
                         icon: const Icon(Icons.delete_outline),
-                        tooltip: 'Slet',
+                        tooltip: l10n.delete,
                         onPressed: () => _confirmDelete(context, child),
                       ),
                     ],
@@ -49,37 +49,43 @@ class ChildrenScreen extends StatelessWidget {
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _addDialog(context),
-        tooltip: 'Tilføj barn',
+        tooltip: l10n.addChild,
         child: const Icon(Icons.add),
       ),
     );
   }
 
-  Future<void> _addDialog(BuildContext context) async {
-    final controller = TextEditingController();
+  /// Asks for a name. Returns the name, or `null` if cancelled.
+  Future<String?> _nameDialog(
+    BuildContext context, {
+    required String title,
+    required String confirm,
+    String initial = '',
+  }) async {
+    final controller = TextEditingController(text: initial);
     final formKey = GlobalKey<FormState>();
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Tilføj barn'),
+        title: Text(title),
         content: Form(
           key: formKey,
           child: TextFormField(
             controller: controller,
             autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Navn',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: ctx.l10n.name,
+              border: const OutlineInputBorder(),
             ),
             validator: (value) => (value == null || value.trim().isEmpty)
-                ? 'Navn er påkrævet.'
+                ? ctx.l10n.nameRequired
                 : null,
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annullér'),
+            child: Text(ctx.l10n.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -87,71 +93,47 @@ class ChildrenScreen extends StatelessWidget {
                 Navigator.of(ctx).pop(true);
               }
             },
-            child: const Text('Tilføj'),
+            child: Text(confirm),
           ),
         ],
       ),
     );
-    if (result == true && context.mounted) {
-      try {
-        await context.read<AppState>().addChild(controller.text.trim());
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('$e')));
-        }
+    return result == true ? controller.text.trim() : null;
+  }
+
+  Future<void> _run(BuildContext context, Future<void> Function() action) async {
+    try {
+      await action();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$e')));
       }
     }
   }
 
+  Future<void> _addDialog(BuildContext context) async {
+    final l10n = context.l10n;
+    final name =
+        await _nameDialog(context, title: l10n.addChild, confirm: l10n.add);
+    if (name != null && context.mounted) {
+      await _run(context, () => context.read<AppState>().addChild(name));
+    }
+  }
+
   Future<void> _renameDialog(BuildContext context, Child child) async {
-    final controller = TextEditingController(text: child.name);
-    final formKey = GlobalKey<FormState>();
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Omdøb barn'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Navn',
-              border: OutlineInputBorder(),
-            ),
-            validator: (value) => (value == null || value.trim().isEmpty)
-                ? 'Navn er påkrævet.'
-                : null,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annullér'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.of(ctx).pop(true);
-              }
-            },
-            child: const Text('Gem'),
-          ),
-        ],
-      ),
+    final l10n = context.l10n;
+    final name = await _nameDialog(
+      context,
+      title: l10n.renameChild,
+      confirm: l10n.save,
+      initial: child.name,
     );
-    if (result == true && context.mounted) {
-      try {
-        await context
-            .read<AppState>()
-            .renameChild(child.id, controller.text.trim());
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('$e')));
-        }
-      }
+    if (name != null && context.mounted) {
+      await _run(
+        context,
+        () => context.read<AppState>().renameChild(child.id, name),
+      );
     }
   }
 
@@ -159,32 +141,23 @@ class ChildrenScreen extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Slet barn'),
-        content: Text(
-          'Er du sikker på at du vil slette "${child.name}"?',
-        ),
+        title: Text(ctx.l10n.deleteChild),
+        content: Text(ctx.l10n.confirmDelete(child.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annullér'),
+            child: Text(ctx.l10n.cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Slet'),
+            child: Text(ctx.l10n.delete),
           ),
         ],
       ),
     );
     if (confirmed == true && context.mounted) {
-      try {
-        await context.read<AppState>().deleteChild(child.id);
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('$e')));
-        }
-      }
+      await _run(context, () => context.read<AppState>().deleteChild(child.id));
     }
   }
 }

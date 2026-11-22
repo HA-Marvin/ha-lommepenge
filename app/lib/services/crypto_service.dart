@@ -3,28 +3,27 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 
-/// Simple hjælpefunktioner til hashing af PIN-koder og HMAC-signering af
-/// sync-requests. Ikke tiltænkt bank-niveau sikkerhed - blot "ikke i
-/// klartekst" og en fælles-nøgle-signatur der beskytter mod tilfældige
-/// enheder på samme wifi, jf. MVP-scope.
+/// Simple helpers for hashing PIN codes and HMAC signing of requests. Not
+/// meant as bank-level security - just "not in plain text" and a shared-key
+/// signature that protects against random devices on the same Wi-Fi.
 class CryptoService {
   CryptoService._();
 
   static final Random _random = Random.secure();
 
-  /// Genererer en tilfældig hex-streng med [bytesLength] bytes entropi.
+  /// Generates a random hex string with [bytesLength] bytes of entropy.
   static String randomHex(int bytesLength) {
     final bytes = List<int>.generate(bytesLength, (_) => _random.nextInt(256));
     return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 
-  /// Genererer en tilfældig salt til PIN-hashing.
+  /// Generates a random salt for PIN hashing.
   static String generateSalt() => randomHex(16);
 
-  /// Genererer en delt parringsnøgle (bruges som HMAC-nøgle for sync).
+  /// Generates a shared pairing key (used as HMAC key).
   static String generatePairingKey() => randomHex(32);
 
-  /// SHA-256("$salt:$pin") som hex-streng.
+  /// SHA-256("$salt:$pin") as a hex string.
   static String hashPin(String pin, String salt) {
     final digest = sha256.convert(utf8.encode('$salt:$pin'));
     return digest.toString();
@@ -34,15 +33,15 @@ class CryptoService {
     return hashPin(pin, salt) == expectedHash;
   }
 
-  /// HMAC-SHA256([key], [message]) som hex-streng. Bruges til at
-  /// signere/validere krop af sync-HTTP-requests.
+  /// HMAC-SHA256([key], [message]) as a hex string. Used to sign/validate
+  /// the requests to Home Assistant.
   static String hmacSha256Hex(String key, List<int> messageBytes) {
     final hmac = Hmac(sha256, utf8.encode(key));
     return hmac.convert(messageBytes).toString();
   }
 
-  /// De sidste 6 tegn af parringsnøglen, uppercased - en kort
-  /// backup-kode der kan læses/tastes manuelt hvis QR/kamera driller.
+  /// The last 6 characters of the pairing key, upper case - a short backup
+  /// code that can be read/typed by hand if QR/camera acts up.
   static String backupCode(String pairingKey) {
     if (pairingKey.length <= 6) return pairingKey.toUpperCase();
     return pairingKey.substring(pairingKey.length - 6).toUpperCase();

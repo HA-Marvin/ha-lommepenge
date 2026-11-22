@@ -1,9 +1,8 @@
-// Simple unit-tests for data-laget: opgaver, completions og saldo-logik.
+// Simple unit tests for the data layer: tasks, completions and balance logic.
 //
-// Kører uden en rigtig Android/iOS-platform ved at bruge
-// sqflite_common_ffi (en ren Dart/FFI sqlite-implementering) i stedet
-// for sqflite's normale platform-kanal, og shared_preferences' indbyggede
-// mock-værdier til indstillinger.
+// Runs without a real Android/iOS platform by using sqflite_common_ffi (a
+// pure Dart/FFI sqlite implementation) instead of sqflite's normal platform
+// channel, and shared_preferences' built-in mock values for settings.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -26,9 +25,9 @@ void main() {
   late TaskRepository repository;
   late DatabaseHelper dbHelper;
 
-  // Et fast test-barn, oprettet i hver test's setUp og brugt konsekvent
-  // som childId i alle kald der nu kræver ét - se
-  // 'Flere børn'-gruppen nedenfor for tests der bruger flere børn.
+  // A fixed test child, created in each test's setUp and used consistently
+  // as childId in all calls that require one - see the 'Several children'
+  // group below for tests that use several children.
   late String childId;
 
   setUp(() async {
@@ -37,23 +36,23 @@ void main() {
 
     dbHelper = DatabaseHelper.instance
       ..overridePath = ':memory:';
-    // Sørg for en frisk database-forbindelse for hver test.
+    // Make sure of a fresh database connection for each test.
     await dbHelper.close();
 
     repository = TaskRepository(databaseHelper: dbHelper, settings: settings);
 
-    childId = (await repository.addChild('Barn 1')).id;
+    childId = (await repository.addChild('Child 1')).id;
   });
 
   tearDown(() async {
     await dbHelper.close();
   });
 
-  group('Opgaver og godkendelse', () {
-    test('opret opgave -> markér udført -> godkend -> saldo stiger korrekt',
+  group('Tasks and approval', () {
+    test('create task -> mark as done -> approve -> balance rises correctly',
         () async {
       final task = await repository.createTask(
-        title: 'Rydde op på værelset',
+        title: 'Tidy the bedroom',
         amountOre: 1000, // 10 kr
         recurrence: Recurrence.once,
       );
@@ -64,7 +63,7 @@ void main() {
           await repository.completeTask(task.id, childId: childId);
       expect(completion.status, CompletionStatus.pending);
 
-      // Saldoen stiger ikke før godkendelse.
+      // The balance does not rise before approval.
       expect(await repository.currentBalanceOre(childId: childId), 0);
 
       await repository.approveCompletion(completion.id);
@@ -73,9 +72,9 @@ void main() {
       expect(await repository.totalEarnedOre(childId: childId), 1000);
     });
 
-    test('afvist udførelse tæller ikke med i saldoen', () async {
+    test('a rejected completion does not count in the balance', () async {
       final task = await repository.createTask(
-        title: 'Vaske op',
+        title: 'Wash up',
         amountOre: 500,
         recurrence: Recurrence.once,
       );
@@ -89,9 +88,9 @@ void main() {
       expect(completions.single.status, CompletionStatus.rejected);
     });
 
-    test('kan ikke markere udført igen mens en completion venter', () async {
+    test('cannot mark as done again while a completion is waiting', () async {
       final task = await repository.createTask(
-        title: 'Støvsuge',
+        title: 'Vacuum',
         amountOre: 700,
         recurrence: Recurrence.daily,
       );
@@ -103,9 +102,9 @@ void main() {
       );
     });
 
-    test('marker som udbetalt nulstiller den optjente saldo', () async {
+    test('mark as paid out resets the earned balance', () async {
       final task = await repository.createTask(
-        title: 'Fejer indkørslen',
+        title: 'Sweep the driveway',
         amountOre: 2000,
         recurrence: Recurrence.once,
       );
@@ -119,13 +118,13 @@ void main() {
 
       expect(await repository.currentBalanceOre(childId: childId), 0);
       expect(repository.settings.paidOutOreFor(childId), 2000);
-      // Historikken (totalEarnedOre) ændres ikke af en udbetaling.
+      // The history (totalEarnedOre) is not changed by a payout.
       expect(await repository.totalEarnedOre(childId: childId), 2000);
     });
 
-    test('manuel saldo-justering (+/-) tælles med i saldoen', () async {
+    test('a manual balance adjustment (+/-) counts in the balance', () async {
       final task = await repository.createTask(
-        title: 'Fejer indkørslen',
+        title: 'Sweep the driveway',
         amountOre: 1000,
         recurrence: Recurrence.once,
       );
@@ -137,14 +136,14 @@ void main() {
 
       await repository.addBalanceAdjustment(
         amountOre: 500,
-        note: "Fandt en 5'er i sofaen",
+        note: 'Found a coin in the sofa',
         childId: childId,
       );
       expect(await repository.currentBalanceOre(childId: childId), 1500);
 
       await repository.addBalanceAdjustment(
         amountOre: -300,
-        note: 'Rettede en fejlregistrering',
+        note: 'Corrected a wrong entry',
         childId: childId,
       );
       expect(await repository.currentBalanceOre(childId: childId), 1200);
@@ -154,7 +153,7 @@ void main() {
       expect(adjustments.length, 2);
     });
 
-    test('saldo-justering uden note kastes som fejl', () async {
+    test('a balance adjustment without a note is an error', () async {
       expect(
         () => repository.addBalanceAdjustment(
           amountOre: 100,
@@ -165,33 +164,33 @@ void main() {
       );
     });
 
-    test('saldoen bliver aldrig negativ selv med en stor negativ justering',
+    test('the balance never goes negative, even with a large negative adjustment',
         () async {
       await repository.addBalanceAdjustment(
         amountOre: -5000,
-        note: 'Test af nedre grænse',
+        note: 'Test of the lower limit',
         childId: childId,
       );
       expect(await repository.currentBalanceOre(childId: childId), 0);
     });
   });
 
-  group('Flere børn', () {
+  group('Several children', () {
     test(
-        'en opgave uden assignedChildIds (null) gælder dynamisk for ALLE '
-        'børn, inkl. et barn oprettet EFTER opgaven', () async {
+        'a task without assignedChildIds (null) applies dynamically to ALL '
+        'children, including a child created AFTER the task', () async {
       final task = await repository.createTask(
-        title: 'Rydde op i fællesrummet',
+        title: 'Tidy the living room',
         amountOre: 300,
         recurrence: Recurrence.daily,
-        // assignedChildIds udeladt -> null -> "alle børn".
+        // assignedChildIds left out -> null -> "all children".
       );
 
-      // Kun det ene barn fra setUp findes endnu.
+      // Only the one child from setUp exists so far.
       var resolved = await repository.resolvedChildIdsForTask(task);
       expect(resolved, [childId]);
 
-      // Et nyt barn oprettes EFTER opgaven blev oprettet.
+      // A new child is created AFTER the task was created.
       final secondChild = await repository.addChild('Emma');
 
       resolved = await repository.resolvedChildIdsForTask(task);
@@ -199,24 +198,24 @@ void main() {
     });
 
     test(
-        'to forskellige børn optjener uafhængigt af hinanden på samme '
-        'delte opgave - den ene blokerer ikke den anden', () async {
+        'two different children earn independently of each other on the '
+        'same shared task - one does not block the other', () async {
       final secondChild = await repository.addChild('Emma');
 
       final task = await repository.createTask(
-        title: 'Dække bord',
+        title: 'Set the table',
         amountOre: 200,
         recurrence: Recurrence.daily,
         assignedChildIds: [childId, secondChild.id],
       );
 
-      // Barn 1 udfører og bliver godkendt.
+      // Child 1 does it and is approved.
       final completionA =
           await repository.completeTask(task.id, childId: childId);
       await repository.approveCompletion(completionA.id);
 
-      // Barn 1's godkendte completion må IKKE blokere barn 2's egen,
-      // uafhængige udførelse af samme opgave (availability-fix).
+      // Child 1's approved completion must NOT block child 2's own,
+      // independent completion of the same task.
       final availabilityForB =
           await repository.availabilityFor(task, secondChild.id);
       expect(availabilityForB, TaskAvailability.available);
@@ -225,8 +224,8 @@ void main() {
           await repository.completeTask(task.id, childId: secondChild.id);
       await repository.approveCompletion(completionB.id);
 
-      // Hver af de to børn har optjent beløbet for deres EGEN completion,
-      // ikke begges tilsammen, og på hver sin egen saldo.
+      // Each of the two children has earned the amount for their OWN
+      // completion, not both together, and on their own balance.
       expect(await repository.currentBalanceOre(childId: childId), 200);
       expect(
         await repository.currentBalanceOre(childId: secondChild.id),
@@ -235,9 +234,9 @@ void main() {
       expect(await repository.totalEarnedOre(childId: childId), 200);
       expect(await repository.totalEarnedOre(childId: secondChild.id), 200);
 
-      // Barn 1 er nu "doneToday" (daglig opgave, godkendt i dag), mens
-      // barn 2 (også godkendt i dag) ligeledes er "doneToday" - begge
-      // status uafhængigt af hinanden, ingen krydsblokering.
+      // Child 1 is now "doneToday" (daily task, approved today), while
+      // child 2 (also approved today) is likewise "doneToday" - both
+      // statuses independent of each other, no cross-blocking.
       expect(
         await repository.availabilityFor(task, childId),
         TaskAvailability.doneToday,
@@ -248,21 +247,21 @@ void main() {
       );
     });
 
-    test('en frisk database har ingen børn', () async {
+    test('a fresh database has no children', () async {
       await dbHelper.close();
       expect(await repository.getAllChildren(), isEmpty);
     });
 
-    test('det sidste barn kan slettes', () async {
+    test('the last child can be deleted', () async {
       await repository.deleteChild(childId);
       expect(await repository.getAllChildren(), isEmpty);
     });
 
-    test('completeTask kaster fejl hvis opgaven ikke er tildelt barnet',
+    test('completeTask throws if the task is not assigned to the child',
         () async {
       final otherChild = await repository.addChild('Emma');
       final task = await repository.createTask(
-        title: 'Kun til det oprindelige barn',
+        title: 'Only for the original child',
         amountOre: 100,
         recurrence: Recurrence.once,
         assignedChildIds: [childId],
@@ -275,11 +274,11 @@ void main() {
     });
   });
 
-  group('Task-model: ugeplan (activeWeekdays)', () {
-    test('tom eller fuld liste normaliseres til null ("alle dage")', () {
+  group('Task model: week plan (activeWeekdays)', () {
+    test('an empty or full list is normalized to null ("every day")', () {
       final allSeven = Task(
         id: 'w1',
-        title: 'Alle dage angivet eksplicit',
+        title: 'Every day given explicitly',
         amountOre: 100,
         recurrence: Recurrence.daily,
         createdAt: DateTime(2026, 1, 1),
@@ -289,7 +288,7 @@ void main() {
 
       final empty = Task(
         id: 'w2',
-        title: 'Tom liste',
+        title: 'Empty list',
         amountOre: 100,
         recurrence: Recurrence.daily,
         createdAt: DateTime(2026, 1, 1),
@@ -298,25 +297,25 @@ void main() {
       expect(empty.activeWeekdays, isNull);
     });
 
-    test('isActiveOn respekterer et delvist filter', () {
+    test('isActiveOn respects a partial filter', () {
       final task = Task(
         id: 'w3',
-        title: 'Hverdage',
+        title: 'Weekdays',
         amountOre: 100,
         recurrence: Recurrence.daily,
         createdAt: DateTime(2026, 1, 1),
         activeWeekdays: const [1, 2, 3, 4, 5],
       );
-      // 2026-03-14 er en lørdag (weekday 6) - ikke i listen.
+      // 2026-03-14 is a Saturday (weekday 6) - not in the list.
       expect(task.isActiveOn(DateTime(2026, 3, 14)), isFalse);
-      // 2026-03-13 er en fredag (weekday 5) - i listen.
+      // 2026-03-13 is a Friday (weekday 5) - in the list.
       expect(task.isActiveOn(DateTime(2026, 3, 13)), isTrue);
     });
 
-    test('copyWith(clearActiveWeekdays: true) nulstiller til "alle dage"', () {
+    test('copyWith(clearActiveWeekdays: true) resets to "every day"', () {
       final task = Task(
         id: 'w4',
-        title: 'Kun mandag',
+        title: 'Only Monday',
         amountOre: 100,
         recurrence: Recurrence.daily,
         createdAt: DateTime(2026, 1, 1),
@@ -328,11 +327,11 @@ void main() {
     });
   });
 
-  group('Task-model: børn-tildeling (assignedChildIds)', () {
-    test('tom liste normaliseres til null ("alle børn")', () {
+  group('Task model: child assignment (assignedChildIds)', () {
+    test('an empty list is normalized to null ("all children")', () {
       final task = Task(
         id: 'c1',
-        title: 'Tom liste',
+        title: 'Empty list',
         amountOre: 100,
         recurrence: Recurrence.once,
         createdAt: DateTime(2026, 1, 1),
@@ -341,11 +340,11 @@ void main() {
       expect(task.assignedChildIds, isNull);
     });
 
-    test('copyWith(clearAssignedChildIds: true) nulstiller til "alle børn"',
+    test('copyWith(clearAssignedChildIds: true) resets to "all children"',
         () {
       final task = Task(
         id: 'c2',
-        title: 'Kun barn A',
+        title: 'Only child A',
         amountOre: 100,
         recurrence: Recurrence.once,
         createdAt: DateTime(2026, 1, 1),
@@ -356,11 +355,11 @@ void main() {
     });
   });
 
-  group('Gentagelses-logik (recurrence)', () {
-    test('engangsopgave kan ikke udføres igen efter godkendelse', () {
+  group('Recurrence logic', () {
+    test('a one-off task cannot be done again after approval', () {
       final task = Task(
         id: 't1',
-        title: 'Engang',
+        title: 'Once',
         amountOre: 100,
         recurrence: Recurrence.once,
         createdAt: DateTime(2026, 1, 1),
@@ -383,10 +382,10 @@ void main() {
       );
     });
 
-    test('daglig opgave er tilgængelig igen næste kalenderdag', () {
+    test('a daily task is available again the next calendar day', () {
       final task = Task(
         id: 't2',
-        title: 'Dagligt',
+        title: 'Daily',
         amountOre: 100,
         recurrence: Recurrence.daily,
         createdAt: DateTime(2026, 1, 1),
@@ -403,23 +402,23 @@ void main() {
         ),
       ];
 
-      // Samme dag, senere klokkeslæt -> stadig ikke tilgængelig.
+      // Same day, later time -> still not available.
       expect(
         computeAvailability(task, completions, now: DateTime(2026, 3, 10, 20)),
         TaskAvailability.doneToday,
       );
 
-      // Næste kalenderdag -> tilgængelig igen.
+      // Next calendar day -> available again.
       expect(
         computeAvailability(task, completions, now: DateTime(2026, 3, 11, 0, 1)),
         TaskAvailability.available,
       );
     });
 
-    test('ugentlig opgave er tilgængelig igen efter 7 dage', () {
+    test('a weekly task is available again after 7 days', () {
       final task = Task(
         id: 't3',
-        title: 'Ugentligt',
+        title: 'Weekly',
         amountOre: 100,
         recurrence: Recurrence.weekly,
         createdAt: DateTime(2026, 1, 1),
@@ -446,16 +445,16 @@ void main() {
       );
     });
 
-    test('ubegrænset opgave er altid tilgængelig uden godkendt historik', () {
+    test('an unlimited task is always available regardless of approved history', () {
       final task = Task(
         id: 't4',
-        title: 'Gå tur med hunden',
+        title: 'Walk the dog',
         amountOre: 50,
         recurrence: Recurrence.unlimited,
         createdAt: DateTime(2026, 1, 1),
       );
-      // Selv adskillige godkendte completions samme dag ændrer intet -
-      // 'unlimited' ignorerer bevidst godkendt-historikken.
+      // Even several approved completions on the same day change nothing -
+      // 'unlimited' deliberately ignores the approved history.
       final completions = [
         Completion(
           id: 'c4a',
@@ -483,10 +482,10 @@ void main() {
       );
     });
 
-    test('ubegrænset opgave blokeres stadig af en ventende godkendelse', () {
+    test('an unlimited task is still blocked by a pending approval', () {
       final task = Task(
         id: 't5',
-        title: 'Gå tur med hunden',
+        title: 'Walk the dog',
         amountOre: 50,
         recurrence: Recurrence.unlimited,
         createdAt: DateTime(2026, 1, 1),
@@ -508,11 +507,11 @@ void main() {
       );
     });
 
-    test('ugedags-filter blokerer opgaven på fravalgte dage', () {
-      // Kun aktiv onsdag (weekday 3). 2026-03-10 er en tirsdag.
+    test('the weekday filter blocks the task on deselected days', () {
+      // Only active on Wednesday (weekday 3). 2026-03-10 is a Tuesday.
       final task = Task(
         id: 't6',
-        title: 'Kun onsdag',
+        title: 'Only Wednesday',
         amountOre: 100,
         recurrence: Recurrence.daily,
         createdAt: DateTime(2026, 1, 1),
@@ -523,36 +522,36 @@ void main() {
         computeAvailability(task, const [], now: DateTime(2026, 3, 10)),
         TaskAvailability.notScheduledToday,
       );
-      // 2026-03-11 er en onsdag -> aktiv igen.
+      // 2026-03-11 is a Wednesday -> active again.
       expect(
         computeAvailability(task, const [], now: DateTime(2026, 3, 11)),
         TaskAvailability.available,
       );
     });
 
-    test('ugedags-filter gælder ikke for engangsopgaver', () {
+    test('the weekday filter does not apply to one-off tasks', () {
       final task = Task(
         id: 't7',
-        title: 'Engang, kun onsdag angivet men ignoreres',
+        title: 'Once, only Wednesday given but ignored',
         amountOre: 100,
         recurrence: Recurrence.once,
         createdAt: DateTime(2026, 1, 1),
         activeWeekdays: const [3],
       );
 
-      // 2026-03-10 er en tirsdag - alligevel tilgængelig, fordi
-      // ugedags-filteret kun gælder gentagende opgaver.
+      // 2026-03-10 is a Tuesday - available anyway, because the weekday
+      // filter only applies to recurring tasks.
       expect(
         computeAvailability(task, const [], now: DateTime(2026, 3, 10)),
         TaskAvailability.available,
       );
     });
 
-    test('nextAvailableDate finder næste tilgængelige ugedag', () {
-      // Kun aktiv fredag (weekday 5). 2026-03-10 er en tirsdag.
+    test('nextAvailableDate finds the next available weekday', () {
+      // Only active on Friday (weekday 5). 2026-03-10 is a Tuesday.
       final task = Task(
         id: 't8',
-        title: 'Kun fredag',
+        title: 'Only Friday',
         amountOre: 100,
         recurrence: Recurrence.weekly,
         createdAt: DateTime(2026, 1, 1),
@@ -560,13 +559,13 @@ void main() {
       );
 
       final next = nextAvailableDate(task, const [], now: DateTime(2026, 3, 10));
-      expect(next, DateTime(2026, 3, 13)); // Den kommende fredag.
+      expect(next, DateTime(2026, 3, 13)); // The coming Friday.
     });
 
-    test('nextAvailableDate er null mens en completion venter', () {
+    test('nextAvailableDate is null while a completion is waiting', () {
       final task = Task(
         id: 't9',
-        title: 'Kun fredag',
+        title: 'Only Friday',
         amountOre: 100,
         recurrence: Recurrence.weekly,
         createdAt: DateTime(2026, 1, 1),

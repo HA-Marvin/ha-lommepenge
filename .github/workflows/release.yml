@@ -1,9 +1,9 @@
 name: Release
 
-# Et tag som v0.3.0 udgiver integration og app sammen: releasen er det,
-# HACS/Marketplace installerer, og den signerede APK + SHA-256 lægges på
-# den samme release. Integrationen i Home Assistant henter APK'en derfra og
-# fordeler den til familiens enheder.
+# A tag like v0.4.0 releases the integration and the app together: the release
+# is what HACS/Marketplace installs, and the signed APK + SHA-256 are put on
+# the same release. The integration in Home Assistant fetches the APK from
+# there and hands it on to the family's devices.
 on:
   push:
     tags: ["v*"]
@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Version fra tag
+      - name: Version from tag
         id: version
         run: |
           name="${GITHUB_REF_NAME#v}"
@@ -26,7 +26,7 @@ jobs:
           echo "code=$((major * 10000 + minor * 100 + patch))" >> "$GITHUB_OUTPUT"
           manifest=$(jq -r .version custom_components/lommepenge/manifest.json)
           if [ "$manifest" != "$name" ]; then
-            echo "::error::manifest.json har version $manifest, men tagget er $name"
+            echo "::error::manifest.json has version $manifest, but the tag is $name"
             exit 1
           fi
 
@@ -41,14 +41,14 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Signeringsnøgle
+      - name: Signing key
         working-directory: app
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::Hemmeligheden KEYSTORE_BASE64 mangler (se app/README.md)"
+            echo "::error::The secret KEYSTORE_BASE64 is missing (see app/README.md)"
             exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.jks
@@ -59,7 +59,7 @@ jobs:
           keyAlias=lommepenge
           PROPS
 
-      - name: Byg APK
+      - name: Build APK
         working-directory: app
         run: |
           flutter pub get

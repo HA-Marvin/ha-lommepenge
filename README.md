@@ -1,119 +1,172 @@
-# Lommepenge – Home Assistant + Android-app
+# Lommepenge – Home Assistant + Android app
 
-Familiens opgaver og lommepenge med Home Assistant som server: HA gemmer
-opgaver, udførelser og saldi, følger op på frister, og er det eneste sted
-appen på den fælles skærm, forældrenes telefoner og børnenes tablets
-taler med. Kun hjemmenettet – ingen cloud.
+The family's tasks and pocket money with Home Assistant as the server: HA
+stores tasks, completions and balances, follows up on deadlines, and is the
+only place the app on the family screen, the parents' phones and the
+children's tablets talks to. Home network only – no cloud.
 
-Repoet indeholder begge dele, udgivet sammen med ét versionsnummer:
+The repository contains both parts, released together with one version
+number:
 
-- `custom_components/lommepenge` – integrationen (installeres via HACS/Marketplace)
-- `app/` – Android-appen (Flutter), se [app/README.md](app/README.md)
-- `blueprints/` – automationer til godkendelse og spærring
+- `custom_components/lommepenge` – the integration (installed via HACS/Marketplace)
+- `app/` – the Android app (Flutter), see [app/README.md](app/README.md)
+- `blueprints/` – automations for approval and restriction
 
-Hver release har både integrationen og den signerede APK, som HA henter og
-giver videre til familiens enheder.
+Every release has both the integration and the signed APK, which HA fetches
+and hands on to the family's devices.
+
+## Languages
+
+English is the default. Danish, German, Spanish and French are also
+available. The language is always chosen explicitly – it never follows Home
+Assistant's, the browser's or the phone's language, because many families run
+Home Assistant in English but want e.g. Danish for the family.
+
+- **The integration** – entity names, restriction reasons, notification texts
+  for the blueprints and the install page – uses the language chosen when it
+  is set up (*Configure* changes it).
+- **The app** asks for its language on first start (English is preselected).
+  It can be changed later under *Settings* in parent mode, on the connect
+  screen and on the child's tablet. Error messages from Home Assistant follow
+  the app's language.
+- Only Home Assistant's own forms (setup, *Configure*, *Add device*) and the
+  service descriptions follow each user's language in Home Assistant – that
+  is decided by Home Assistant itself.
+
+Installations from before 0.4.0 keep Danish everywhere.
+
+## Currency
+
+The currency is written freely when the integration is set up – e.g. `DKK`
+(the default), `kr`, `€` or `USD` – and can be changed under *Configure*. It
+is used for the balance sensors, notification texts and everywhere in the
+app. Amounts are stored in 1/100 of the currency, so changing the currency
+does not convert existing amounts.
 
 ## Installation
 
-1. HACS/Marketplace → ⋮ → *Brugerdefinerede repositories* → tilføj
-   `https://github.com/HA-Marvin/ha-lommepenge` som type *Integration*.
-2. Installér *Lommepenge* og genstart Home Assistant.
-3. *Indstillinger → Enheder og tjenester → Tilføj integration →
-   Lommepenge*: familiens navn og forælder-PIN (4–8 cifre).
-HA henter appen fra dette repos releases af sig selv – der skal ikke
-bruges nogen GitHub-nøgle. (*Konfigurér* kan pege på et andet repo, fx et
-privat med en nøgle, hvis du bygger din egen app.)
+1. HACS/Marketplace → ⋮ → *Custom repositories* → add
+   `https://github.com/HA-Marvin/ha-lommepenge` as type *Integration*.
+2. Install *Lommepenge* and restart Home Assistant.
+3. *Settings → Devices & services → Add integration → Lommepenge*: the
+   family's name, the parent PIN (4–8 digits), the language and the
+   currency.
 
-Opgraderer du fra 0.1 (hvor køleskabsskærmen var server): slet den gamle
-integration først og tilføj den igen.
+HA fetches the app from this repository's releases by itself – no GitHub
+token is needed. (*Configure* can point to another repository, e.g. a private
+one with a token, if you build your own app.)
 
-## Enheder
+If you upgrade from 0.1 (where the fridge screen was the server): delete the
+old integration first and add it again.
 
-**Appen:** *Indstillinger → Enheder og tjenester → Lommepenge →* familiens
-enhed *→ Besøg* åbner en side med **Hent appen (.apk)** og vejledningen.
-Har enheden ingen browser, så hent filen på computeren og flyt den over,
-fx med USB.
+## Devices
 
-**Tilføj en enhed:** *Lommepenge → Tilføj enhed*. Vælg navn og rolle –
-**fælles skærm**, **forælders telefon** eller **barnets tablet** (og hvilket
-barn). HA viser en kode på 8 tegn og et link til en side med QR-kode og
-app-download.
+**The app:** *Settings → Devices & services → Lommepenge →* the family's
+device *→ Visit* opens a page with **Download the app (.apk)** and the
+instructions. If the device has no browser, download the file on the
+computer and move it over, e.g. with USB.
 
-På enheden: åbn appen, tast koden, og tryk *Forbind*. Appen finder selv
-Home Assistant på netværket. Har enheden kamera, kan QR-koden scannes i
-stedet. Koden virker én gang i 15 minutter. Efter 10 forkerte koder afviser
-HA parring i 5 minutter.
+**Add a device:** *Lommepenge → Add device*. Choose a name and role –
+**family screen**, **parent's phone** or **child's tablet** (and which
+child). HA shows an 8-character code and a link to a page with a QR code and
+the app download.
 
-Hver enhed får sin egen nøgle og signerer alle kald. En barne-tablet ser
-kun sit eget barn og kan kun markere dets opgaver udført – det håndhæves
-af HA. Slettes enheden i HA, mister den adgangen med det samme.
-*Omkonfigurér* på en enhed giver en ny kode (fx efter geninstallation).
+On the device: open the app, choose the language, enter the code and tap
+*Connect*. The app finds Home Assistant on the network by itself. If the
+device has a camera, the QR code can be scanned instead. The code works once
+for 15 minutes. After 10 wrong codes HA refuses pairing for 5 minutes.
 
-## Hvad du får
+Every device gets its own key and signs all requests. A child's tablet only
+sees its own child and can only mark that child's tasks as done – this is
+enforced by HA. If the device is deleted in HA, it loses access
+immediately. *Reconfigure* on a device gives a new code (e.g. after a
+reinstall).
 
-**Pr. barn** (én HA-enhed pr. barn, følger appens navne):
+## What you get
 
-| Entitet | Beskrivelse |
+**Per child** (one HA device per child, following the names in the app).
+Entity names – and the entity IDs of new entities – follow the integration's
+language; in English:
+
+| Entity | Description |
 | --- | --- |
-| `sensor.lommepenge_<barn>_saldo` | Barnets saldo (DKK) |
-| `sensor.lommepenge_<barn>_optjent_denne_uge` | Optjent de sidste 7 dage |
-| `binary_sensor.lommepenge_<barn>_tablet_spaerret` | Til = tabletten skal være spærret nu. Attributter: `reason`, `overdue`, `due_today`, `late_pause_until`, `child_id` |
-| `binary_sensor.lommepenge_<barn>_forsinket_opgave` | Til = en obligatorisk opgave er over fristen |
-| `button.lommepenge_<barn>_ophaev_spaerring_i_dag` | Ophæver spærringen resten af dagen |
+| `sensor.lommepenge_<child>_balance` | The child's balance (in the chosen currency) |
+| `sensor.lommepenge_<child>_earned_this_week` | Earned in the last 7 days |
+| `binary_sensor.lommepenge_<child>_tablet_restricted` | On = the tablet should be restricted now. Attributes: `reason`, `overdue`, `due_today`, `late_pause_until`, `child_id` |
+| `binary_sensor.lommepenge_<child>_overdue_task` | On = a mandatory task is past its deadline |
+| `button.lommepenge_<child>_lift_restriction_today` | Lifts the restriction for the rest of the day |
 
-**For familien:** `sensor.<familie>_venter_pa_godkendelse` (attribut
-`pending`), tiderne `time.<familie>_standardfrist`, `..._spaerretid_fra`,
-`..._spaerretid_til` og grænserne `number.<familie>_pausetid_...`,
-`..._advarsel_for_frist`, `..._vinter_fra_uge`, `..._vinter_til_uge`.
+**For the family:** `sensor.<family>_awaiting_approval` (attribute
+`pending` with `amount` and `currency`; the old `amount_kr` is kept for
+existing automations), the times `time.<family>_default_deadline`,
+`..._restriction_from`, `..._restriction_until` and the limits
+`number.<family>_pause_when_done_late`, `..._warning_before_deadline`,
+`..._winter_from_week`, `..._winter_until_week`.
 
-**Pr. enhed:** `update.<enhed>_app` (installeret og nyeste app-version) og
-`sensor.<enhed>_sidste_kontakt`.
+**Per device:** `update.<device>_app` (installed and latest app version) and
+`sensor.<device>_last_contact`.
 
 **Services:** `lommepenge.approve`, `lommepenge.reject`,
 `lommepenge.suspend_restriction`.
 
-**Hændelse:** `lommepenge_event` med `event` = `completion_pending`,
-`completion_approved`, `completion_rejected` eller `restriction_changed`,
-plus detaljer (barn, opgave, beløb, `completionId`, `late` …).
+**Event:** `lommepenge_event` with `event` = `completion_pending`,
+`completion_approved`, `completion_rejected` or `restriction_changed`, plus
+details (child, task, amount, `completionId`, `late` …). Completion events
+also have `message`: a ready-made notification text in the integration's
+language.
 
 ## Blueprints
 
-HACS installerer ikke blueprints. Importér dem med knapperne herunder (eller
-*Indstillinger → Automationer → Blueprints → Importér* med linket):
+HACS does not install blueprints. Import them with the buttons below (or
+*Settings → Automations → Blueprints → Import* with the link):
 
-[![Importér godkendelse](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FHA-Marvin%2Fha-lommepenge%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Flommepenge%2Fgodkendelse.yaml)
-[![Importér spærring](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FHA-Marvin%2Fha-lommepenge%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Flommepenge%2Fspaerring.yaml)
+[![Import approval](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FHA-Marvin%2Fha-lommepenge%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Flommepenge%2Fapproval.yaml)
+[![Import restriction](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FHA-Marvin%2Fha-lommepenge%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Flommepenge%2Frestriction.yaml)
 
-- **Godkendelse via notifikation** – Godkend/Afvis-knapper til de valgte
-  forældres telefoner. Kun tryk fra de valgte personers HA-brugere bliver
-  udført. Notifikationen forsvinder hos alle, når opgaven er afgjort.
-- **Spær tablet ved forsinket opgave** – én automation pr. barn. Tænder en
-  kontakt (fx en UniFi-trafikregel, der blokerer YouTube/spil for barnets
-  tablet), mens barnet er spærret. Valgfri besked til forældrene med
-  knappen "Ophæv spærring i dag".
+- **Approve via notification** – Approve/Reject buttons on the selected
+  parents' phones. Only taps from the selected people's HA users are carried
+  out. The notification disappears for everyone once the task is decided.
+- **Restrict tablet on overdue task** – one automation per child. Turns on a
+  switch (e.g. a UniFi traffic rule that blocks YouTube/games for the child's
+  tablet) while the child is restricted. Optional message to the parents with
+  a button to lift the restriction for today.
 
-## Sikkerhed
+The notification text and restriction reason come from the integration in its
+language. Button labels and titles are blueprint inputs with English
+defaults – change them when you create the automation.
 
-- Appens API (`/api/lommepenge/…`) svarer kun på hjemmenettet – aldrig via
-  HA's eksterne adresse eller Nabu Casa.
-- Appen bruger ikke HA's brugere eller tokens. Hver enhed har sin egen
-  nøgle; kald signeres med HMAC-SHA256 over tidspunkt, metode, sti og
-  krop, og må højst være 5 minutter gamle.
-- HA's ur bestemmer, hvornår en opgave er udført (og dermed "for sent").
-- Familiens data og enhedsnøgler ligger i `.storage/lommepenge.<id>` og
-  kommer med i HA's backups. Appen indeholder ingen familiedata, adresser
-  eller nøgler – dem får den først ved parringen.
+The blueprints were renamed in 0.4.0 (`godkendelse.yaml` → `approval.yaml`,
+`spaerring.yaml` → `restriction.yaml`). Automations made from the old
+blueprints keep working, but "Re-import" of the old ones no longer finds them;
+import the new ones instead.
 
-## Udvikling og udgivelse
+## Security
+
+- The app's API (`/api/lommepenge/…`) only answers on the home network –
+  never via HA's external address or Nabu Casa.
+- The app does not use HA's users or tokens. Every device has its own key;
+  requests are signed with HMAC-SHA256 over timestamp, method, path and body,
+  and may be at most 5 minutes old.
+- HA's clock decides when a task was done (and thereby "late").
+- The family's data and device keys are in `.storage/lommepenge.<id>` and
+  are part of HA's backups. The app contains no family data, addresses or
+  keys – it only gets them when pairing.
+
+## Development and releases
 
 ```bash
 pip install -r requirements_test.txt
-pytest                       # integrationen
-cd app && flutter test       # appen
+pytest                       # the integration
+cd app && flutter test       # the app
 ```
 
-En release laves med et tag `vX.Y.Z` (samme version i
+A release is made with a tag `vX.Y.Z` (the same version as in
 `custom_components/lommepenge/manifest.json`). `.github/workflows/release.yml`
-bygger den signerede APK og lægger den på releasen. Signeringsnøglen ligger
-som hemmelighederne `KEYSTORE_BASE64` og `KEYSTORE_PASSWORD`.
+builds the signed APK and puts it on the release. The signing key is stored
+as the secrets `KEYSTORE_BASE64` and `KEYSTORE_PASSWORD`.
+
+**Translations:** the integration's UI texts are in
+`custom_components/lommepenge/strings.json` (English) and `translations/`;
+the texts it writes itself are in `custom_components/lommepenge/i18n.py`. The
+app's texts are in `app/lib/l10n/app_<language>.arb` (English is the
+template). The tests check that every language has every text.

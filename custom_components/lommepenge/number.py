@@ -1,4 +1,4 @@
-"""Tal fra familiens indstillinger - kan rettes direkte fra HA."""
+"""Numbers from the family's settings - can be changed directly from HA."""
 
 from __future__ import annotations
 
@@ -18,14 +18,14 @@ from .entity import LommepengeEntity
 @dataclass(frozen=True)
 class NumberSetting:
     key: str
-    setting: str  # appens indstillingsnøgle (se FamilySettings i appen)
+    setting: str  # the app's setting key (see FamilySettings in the app)
     minimum: int
     maximum: int
     unit: str | None
     icon: str
 
 
-# Grænserne skal matche appens validering i FamilySettings.withValue.
+# The limits must match the app's validation in FamilySettings.withValue.
 NUMBER_SETTINGS = (
     NumberSetting("late_pause_minutes", "latePauseMinutes", 0, 240, UnitOfTime.MINUTES, "mdi:timer-sand"),
     NumberSetting("warning_minutes", "warningMinutes", 0, 600, UnitOfTime.MINUTES, "mdi:alarm"),
@@ -67,4 +67,5 @@ class SettingNumber(LommepengeEntity, NumberEntity):
                 "set_setting", {"key": self._setting.setting, "value": int(value)}
             )
         except LommepengeError as err:
-            raise HomeAssistantError(f"Lommepenge: {err}") from err
+            language = self.coordinator.runtime.language
+            raise HomeAssistantError(f"Lommepenge: {err.translate(language)}") from err

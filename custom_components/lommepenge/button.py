@@ -1,4 +1,4 @@
-"""Knap pr. barn: ophæv spærringen for resten af i dag."""
+"""Button per child: lift the restriction for the rest of today."""
 
 from __future__ import annotations
 
@@ -37,4 +37,5 @@ class SuspendRestrictionButton(LommepengeChildEntity, ButtonEntity):
                 "suspend_restriction", {"childId": self.child_id}
             )
         except LommepengeError as err:
-            raise HomeAssistantError(f"Lommepenge: {err}") from err
+            language = self.coordinator.runtime.language
+            raise HomeAssistantError(f"Lommepenge: {err.translate(language)}") from err

@@ -8,12 +8,13 @@ import android.os.Looper
 import java.net.Inet4Address
 
 /**
- * Finder Home Assistant på hjemmenettet via mDNS (`_home-assistant._tcp`),
- * som HA selv annoncerer. Så skal man kun taste koden fra "Tilføj enhed".
+ * Finds Home Assistant on the home network via mDNS (`_home-assistant._tcp`),
+ * which HA announces itself. Then only the code from "Add device" has to be
+ * typed.
  *
- * Søger i [TIMEOUT_MS] og svarer med en liste af `{name, url}`. URL'en
- * bygges af den fundne IP-adresse (`.local`-navne kan ikke altid slås op
- * fra appen) og HA's port.
+ * Searches for [TIMEOUT_MS] and answers with a list of `{name, url}`. The URL
+ * is built from the found IP address (`.local` names cannot always be looked
+ * up from the app) and HA's port.
  */
 class HaDiscovery(
     context: Context,
@@ -53,7 +54,7 @@ class HaDiscovery(
         handler.postDelayed({ finish(stopDiscovery = true) }, TIMEOUT_MS)
     }
 
-    // Ældre Android kan kun slå én tjeneste op ad gangen.
+    // Older Android can only resolve one service at a time.
     @Suppress("DEPRECATION")
     private fun resolveNext() {
         if (resolving || finished) return
@@ -97,7 +98,7 @@ class HaDiscovery(
             try {
                 nsd?.stopServiceDiscovery(listener)
             } catch (_: IllegalArgumentException) {
-                // allerede stoppet
+                // already stopped
             }
         }
         done(found.toList())

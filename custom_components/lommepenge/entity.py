@@ -1,7 +1,11 @@
-"""Fælles basis for Lommepenge-entiteter.
+"""Common base for Lommepenge entities.
 
-Tre slags enheder i HA: familien (indstillinger og godkendelser), hvert
-barn (saldo og spærring) og hver af appens enheder (version og kontakt).
+Three kinds of devices in HA: the family (settings and approvals), each child
+(balance and restriction) and each of the app's devices (version and contact).
+
+Entity names are set in the integration's language (`runtime.entity_names`),
+so they do not follow HA's language - the translation key is only the
+fallback.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import CONF_DEVICE_ID, CONF_ROLE, DOMAIN, ROLE_CHILD, ROLE_PARENT, SUBENTRY_DEVICE
 from .coordinator import LommepengeConfigEntry, LommepengeCoordinator
 from .http import home_url
+from .i18n import translate
 from .runtime import LommepengeRuntime
 
 
@@ -30,8 +35,16 @@ def child_device_identifier(entry_id: str, child_id: str) -> tuple[str, str]:
     return (DOMAIN, f"{entry_id}_{child_id}")
 
 
+def _set_name(entity: Entity, runtime: LommepengeRuntime, key: str) -> None:
+    """The entity's name in the integration's language; HA's own translation
+    (in HA's language) is only used if the name is missing."""
+    entity._attr_translation_key = key
+    if (name := runtime.entity_names.get(key)) is not None:
+        entity._attr_name = name
+
+
 class LommepengeEntity(CoordinatorEntity[LommepengeCoordinator]):
-    """Entitet på familiens enhed."""
+    """Entity on the family's device."""
 
     _attr_has_entity_name = True
 
@@ -39,19 +52,19 @@ class LommepengeEntity(CoordinatorEntity[LommepengeCoordinator]):
         super().__init__(coordinator)
         entry = coordinator.config_entry
         self._attr_unique_id = f"{entry.entry_id}_{key}"
-        self._attr_translation_key = key
+        _set_name(self, coordinator.runtime, key)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Lommepenge",
-            model="Familie",
-            # "Besøg" på enheden i HA: appen og vejledningen til nye enheder.
+            model=translate("model_family", coordinator.runtime.language),
+            # "Visit" on the device in HA: the app and instructions for new devices.
             configuration_url=home_url(coordinator.hass),
         )
 
 
 class LommepengeChildEntity(CoordinatorEntity[LommepengeCoordinator]):
-    """Entitet for ét barn - hvert barn får sin egen enhed i HA."""
+    """Entity for one child - every child gets its own device in HA."""
 
     _attr_has_entity_name = True
 
@@ -61,12 +74,12 @@ class LommepengeChildEntity(CoordinatorEntity[LommepengeCoordinator]):
         entry = coordinator.config_entry
         child = coordinator.child(child_id) or {}
         self._attr_unique_id = f"{entry.entry_id}_{child_id}_{key}"
-        self._attr_translation_key = key
+        _set_name(self, coordinator.runtime, key)
         self._attr_device_info = DeviceInfo(
             identifiers={child_device_identifier(entry.entry_id, child_id)},
             name=child_device_name(child),
             manufacturer="Lommepenge",
-            model="Barn",
+            model=translate("model_child", coordinator.runtime.language),
             via_device=(DOMAIN, entry.entry_id),
         )
 
@@ -76,8 +89,8 @@ class LommepengeChildEntity(CoordinatorEntity[LommepengeCoordinator]):
 
     @property
     def available(self) -> bool:
-        # Et barn der er slettet i appen bliver utilgængeligt i stedet for
-        # at vise forældede værdier.
+        # A child deleted in the app becomes unavailable instead of showing
+        # stale values.
         return super().available and self.child is not None
 
 
@@ -86,7 +99,7 @@ def async_setup_child_entities(
     async_add_entities: AddConfigEntryEntitiesCallback,
     factory: Callable[[str], list[LommepengeChildEntity]],
 ) -> None:
-    """Opretter entiteter pr. barn - også for børn der tilføjes senere."""
+    """Creates entities per child - also for children added later."""
     known: set[str] = set()
 
     @callback
@@ -101,11 +114,11 @@ def async_setup_child_entities(
     coordinator.config_entry.async_on_unload(coordinator.async_add_listener(_add_new_children))
 
 
-_MODELS = {ROLE_CHILD: "Barnets tablet", ROLE_PARENT: "Forælder"}
+_MODELS = {ROLE_CHILD: "role_child", ROLE_PARENT: "role_parent"}
 
 
 class LommepengeAppDeviceEntity(Entity):
-    """Entitet for én af appens enheder (en subentry under integrationen)."""
+    """Entity for one of the app's devices (a subentry under the integration)."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
@@ -114,18 +127,20 @@ class LommepengeAppDeviceEntity(Entity):
         self.runtime = runtime
         self.device_id: str = subentry.data[CONF_DEVICE_ID]
         self._attr_unique_id = f"{self.device_id}_{key}"
-        self._attr_translation_key = key
+        _set_name(self, runtime, key)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self.device_id)},
             name=subentry.title,
             manufacturer="Lommepenge",
-            model=_MODELS.get(subentry.data[CONF_ROLE], "Fælles skærm"),
+            model=translate(
+                _MODELS.get(subentry.data[CONF_ROLE], "role_screen"), runtime.language
+            ),
             via_device=(DOMAIN, runtime.entry.entry_id),
         )
 
     @property
     def device(self) -> dict[str, Any] | None:
-        """Enhedens data, eller `None` hvis den ikke er parret endnu."""
+        """The device's data, or `None` if it is not paired yet."""
         return self.runtime.devices.get(self.device_id)
 
     async def async_added_to_hass(self) -> None:
@@ -137,7 +152,7 @@ def async_setup_app_device_entities(
     async_add_entities: AddConfigEntryEntitiesCallback,
     factory: Callable[[ConfigSubentry], list[Entity]],
 ) -> None:
-    """Én gruppe entiteter pr. tilføjet enhed, knyttet til dens subentry."""
+    """One group of entities per added device, attached to its subentry."""
     for subentry in entry.subentries.values():
         if subentry.subentry_type == SUBENTRY_DEVICE:
             async_add_entities(factory(subentry), config_subentry_id=subentry.subentry_id)

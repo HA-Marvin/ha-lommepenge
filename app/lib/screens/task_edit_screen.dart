@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/l10n.dart';
 import '../models/task.dart';
 import '../providers/app_state.dart';
 
-/// Formular til at oprette en ny opgave, eller redigere en eksisterende
-/// hvis [task] er sat.
+/// Form to create a new task, or edit an existing one if [task] is set.
 class TaskEditScreen extends StatefulWidget {
   final Task? task;
   const TaskEditScreen({super.key, this.task});
@@ -14,18 +14,6 @@ class TaskEditScreen extends StatefulWidget {
   @override
   State<TaskEditScreen> createState() => _TaskEditScreenState();
 }
-
-/// De 7 ugedage i dansk visningsrækkefølge (mandag først), sammen med
-/// deres `DateTime.weekday`-værdi (1=mandag...7=søndag).
-const List<MapEntry<int, String>> _kWeekdayLabels = [
-  MapEntry(1, 'Man'),
-  MapEntry(2, 'Tir'),
-  MapEntry(3, 'Ons'),
-  MapEntry(4, 'Tor'),
-  MapEntry(5, 'Fre'),
-  MapEntry(6, 'Lør'),
-  MapEntry(7, 'Søn'),
-];
 
 class _TaskEditScreenState extends State<TaskEditScreen> {
   final _formKey = GlobalKey<FormState>();
@@ -35,17 +23,16 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
   late Recurrence _recurrence;
   late bool _mandatory;
 
-  /// `null` betyder "alle dage" (intet ugedags-filter). Holdes altid
-  /// normaliseret sådan (aldrig en liste med alle 7 dage) for en klar,
-  /// entydig UI-tilstand - se [_setWeekdays].
+  /// `null` means "every day" (no weekday filter). Always kept normalized
+  /// like that (never a list with all 7 days) for a clear, unambiguous UI
+  /// state - see [_setWeekdays].
   List<int>? _activeWeekdays;
 
-  /// `null` betyder "alle børn" (dynamisk - gælder også børn tilføjet
-  /// senere). Ellers en eksplicit liste af barn-id'er - se
-  /// [_toggleChild].
+  /// `null` means "all children" (dynamic - also applies to children added
+  /// later). Otherwise an explicit list of child ids - see [_toggleChild].
   List<String>? _assignedChildIds;
 
-  /// `"HH:MM"` eller `null` (ingen tid / familiens standardfrist).
+  /// `"HH:MM"` or `null` (no time / the family's default deadline).
   String? _startTime;
   String? _dueTime;
   late bool _showInCalendar;
@@ -73,7 +60,7 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
     _showInCalendar = task?.showInCalendar ?? false;
   }
 
-  /// Åbner tidsvælgeren og returnerer `"HH:MM"`, eller `null` ved annullér.
+  /// Opens the time picker and returns `"HH:MM"`, or `null` if cancelled.
   Future<String?> _pickTime(String? current, String fallback) async {
     final minutes = minutesOfDay(current ?? fallback) ?? 0;
     final picked = await showTimePicker(
@@ -108,8 +95,8 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
     return (value * 100).round();
   }
 
-  /// Sætter ugeplanen og normaliserer "alle 7 dage markeret" til `null`,
-  /// så UI'et altid har én entydig repræsentation af "alle dage".
+  /// Sets the week plan and normalizes "all 7 days selected" to `null`, so
+  /// the UI always has one unambiguous representation of "every day".
   void _setWeekdays(Set<int> weekdays) {
     setState(() {
       _activeWeekdays = (weekdays.isEmpty || weekdays.length >= 7)
@@ -120,7 +107,7 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
 
   void _toggleWeekday(int weekday, bool selected) {
     final current = (_activeWeekdays == null || _activeWeekdays!.isEmpty)
-        ? _kWeekdayLabels.map((e) => e.key).toSet()
+        ? {1, 2, 3, 4, 5, 6, 7}
         : _activeWeekdays!.toSet();
     if (selected) {
       current.add(weekday);
@@ -130,10 +117,10 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
     _setWeekdays(current);
   }
 
-  /// Vælger/fravælger ét barn. Starter fra en tom eksplicit liste hvis
-  /// "alle børn" (`null`) pt. er valgt - dvs. at trykke på ét
-  /// barne-chip mens "alle børn" er valgt, skifter til "kun dette barn"
-  /// i stedet for at fjerne det fra en implicit "alle"-liste.
+  /// Selects/deselects one child. Starts from an empty explicit list if "all
+  /// children" (`null`) is currently selected - i.e. tapping one child chip
+  /// while "all children" is selected switches to "only this child" instead
+  /// of removing it from an implicit "all" list.
   void _toggleChild(String childId, bool selected) {
     setState(() {
       final current = (_assignedChildIds == null || _assignedChildIds!.isEmpty)
@@ -155,8 +142,8 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
     final appState = context.read<AppState>();
     final amountOre = _parseKrToOre(_amountController.text)!;
     final description = _descriptionController.text.trim();
-    // 'Engang' har ingen ugeplan - sendes altid som "alle dage" (null),
-    // uanset hvad der evt. var valgt tidligere/på en anden gentagelse.
+    // 'Once' has no week plan - always sent as "every day" (null), regardless
+    // of what may have been chosen before/on another recurrence.
     final weekdaysToSave =
         _recurrence == Recurrence.once ? null : _activeWeekdays;
 
@@ -203,11 +190,15 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
   @override
   Widget build(BuildContext context) {
     final showWeekPlan = _recurrence != Recurrence.once;
-    final children = context.watch<AppState>().children;
+    final appState = context.watch<AppState>();
+    final children = appState.children;
+    final currency = appState.currency;
+    final l10n = context.l10n;
+    final defaultDue = appStateFamilyDefault(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? 'Redigér opgave' : 'Ny opgave'),
+        title: Text(_isEditing ? l10n.editTask : l10n.newTask),
       ),
       body: Form(
         key: _formKey,
@@ -216,30 +207,30 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
           children: [
             TextFormField(
               controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: 'Titel',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.taskTitle,
+                border: const OutlineInputBorder(),
               ),
               validator: (value) => (value == null || value.trim().isEmpty)
-                  ? 'Titel er påkrævet.'
+                  ? l10n.titleRequired
                   : null,
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Beskrivelse (valgfri)',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.descriptionOptional,
+                border: const OutlineInputBorder(),
               ),
               maxLines: 2,
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _amountController,
-              decoration: const InputDecoration(
-                labelText: 'Beløb (kr)',
-                border: OutlineInputBorder(),
-                suffixText: 'kr',
+              decoration: InputDecoration(
+                labelText: l10n.amountLabel(currency),
+                border: const OutlineInputBorder(),
+                suffixText: currency,
               ),
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
@@ -249,59 +240,51 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
               validator: (value) {
                 final parsed = _parseKrToOre(value ?? '');
                 if (parsed == null || parsed < 0) {
-                  return 'Angiv et gyldigt beløb (0 eller derover).';
+                  return l10n.amountInvalid;
                 }
                 return null;
               },
             ),
             const SizedBox(height: 16),
-            Text('Gentagelse', style: Theme.of(context).textTheme.titleSmall),
+            Text(l10n.recurrence, style: Theme.of(context).textTheme.titleSmall),
             RadioListTile<Recurrence>(
-              title: const Text('Engang'),
+              title: Text(Recurrence.once.label(l10n)),
               value: Recurrence.once,
               groupValue: _recurrence,
               onChanged: (v) => setState(() => _recurrence = v!),
             ),
             RadioListTile<Recurrence>(
-              title: const Text('Dagligt'),
+              title: Text(Recurrence.daily.label(l10n)),
               value: Recurrence.daily,
               groupValue: _recurrence,
               onChanged: (v) => setState(() => _recurrence = v!),
             ),
-            // 'Ugentligt' tilbydes ikke længere til nye/ændrede opgaver
-            // (ugeplan på 'Dagligt' dækker samme behov mere fleksibelt) -
-            // men vises stadig HVIS opgaven allerede er ugentlig, så
-            // redigeringsskærmen ikke fremstår i stykker for eksisterende
-            // opgaver, og så forælderen aktivt skal vælge noget andet for
-            // at skifte væk fra det.
+            // 'Weekly' is no longer offered for new/changed tasks (a week plan
+            // on 'Daily' covers the same need more flexibly) - but is still
+            // shown IF the task is already weekly, so the edit screen does not
+            // look broken for existing tasks, and so the parent has to
+            // actively choose something else to switch away from it.
             if (_recurrence == Recurrence.weekly)
               RadioListTile<Recurrence>(
-                title: const Text('Ugentligt'),
-                subtitle: const Text(
-                  'Udgået - vælg i stedet "Dagligt" og sæt ugeplanen til '
-                  'den/de ønskede dage.',
-                ),
+                title: Text(Recurrence.weekly.label(l10n)),
+                subtitle: Text(l10n.weeklyDiscontinued),
                 value: Recurrence.weekly,
                 groupValue: _recurrence,
                 onChanged: (v) => setState(() => _recurrence = v!),
               ),
             RadioListTile<Recurrence>(
-              title: const Text('Ubegrænset'),
-              subtitle: const Text(
-                'Kan udføres flere gange om dagen - blokeres kun mens en '
-                'udførelse venter på godkendelse.',
-              ),
+              title: Text(Recurrence.unlimited.label(l10n)),
+              subtitle: Text(l10n.unlimitedHelp),
               value: Recurrence.unlimited,
               groupValue: _recurrence,
               onChanged: (v) => setState(() => _recurrence = v!),
             ),
             if (showWeekPlan) ...[
               const SizedBox(height: 16),
-              Text('Ugeplan', style: Theme.of(context).textTheme.titleSmall),
+              Text(l10n.weekPlan, style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 4),
               Text(
-                'Vælg hvilke dage opgaven er aktiv, fx kun tirsdag og '
-                'torsdag. Default er alle dage.',
+                l10n.weekPlanHelp,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 8),
@@ -311,15 +294,15 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
                 children: [
                   OutlinedButton(
                     onPressed: () => _setWeekdays({}),
-                    child: const Text('Alle dage'),
+                    child: Text(l10n.allDays),
                   ),
                   OutlinedButton(
                     onPressed: () => _setWeekdays({1, 2, 3, 4, 5}),
-                    child: const Text('Hverdage'),
+                    child: Text(l10n.weekdays),
                   ),
                   OutlinedButton(
                     onPressed: () => _setWeekdays({6, 7}),
-                    child: const Text('Weekend'),
+                    child: Text(l10n.weekend),
                   ),
                 ],
               ),
@@ -327,14 +310,13 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
-                children: _kWeekdayLabels.map((entry) {
+                children: weekdayLabels(l10n).map((entry) {
                   final weekday = entry.key;
-                  final label = entry.value;
                   final selected = _activeWeekdays == null ||
                       _activeWeekdays!.isEmpty ||
                       _activeWeekdays!.contains(weekday);
                   return FilterChip(
-                    label: Text(label),
+                    label: Text(entry.value),
                     selected: selected,
                     onSelected: (v) => _toggleWeekday(weekday, v),
                   );
@@ -342,11 +324,10 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
               ),
             ],
             const SizedBox(height: 16),
-            Text('Tildel til', style: Theme.of(context).textTheme.titleSmall),
+            Text(l10n.assignTo, style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 4),
             Text(
-              'Vælg hvilke børn opgaven gælder for. "Alle børn" gælder '
-              'dynamisk - også for børn der tilføjes senere.',
+              l10n.assignToHelp,
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
@@ -355,7 +336,7 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
               runSpacing: 8,
               children: [
                 FilterChip(
-                  label: const Text('Alle børn'),
+                  label: Text(l10n.allChildren),
                   selected:
                       _assignedChildIds == null || _assignedChildIds!.isEmpty,
                   onSelected: (_) => setState(() => _assignedChildIds = null),
@@ -373,29 +354,24 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
             ),
             const SizedBox(height: 8),
             SwitchListTile(
-              title: const Text('Obligatorisk opgave'),
-              subtitle: const Text(
-                'Vises tydeligt markeret som "skal udføres" i stedet for '
-                '"kan udføres".',
-              ),
+              title: Text(l10n.mandatoryTask),
+              subtitle: Text(l10n.mandatoryTaskHelp),
               value: _mandatory,
               onChanged: (v) => setState(() => _mandatory = v),
             ),
             const SizedBox(height: 8),
-            Text('Tidspunkt', style: Theme.of(context).textTheme.titleSmall),
+            Text(l10n.timeOfDay, style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 4),
             Text(
               _mandatory
-                  ? 'Efter fristen tæller opgaven som forsinket. Uden egen '
-                      'frist bruges familiens standardfrist '
-                      '(${appStateFamilyDefault(context)}).'
-                  : 'Valgfrit. Fristen følges kun op på obligatoriske opgaver.',
+                  ? l10n.timeHelpMandatory(defaultDue)
+                  : l10n.timeHelpOptional,
               style: Theme.of(context).textTheme.bodySmall,
             ),
             _TimeRow(
-              label: 'Fra',
+              label: l10n.fromLabel,
               value: _startTime,
-              emptyText: 'Ingen',
+              emptyText: l10n.none,
               onPick: () async {
                 final t = await _pickTime(_startTime, '07:00');
                 if (t != null) setState(() => _startTime = t);
@@ -403,24 +379,18 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
               onClear: () => setState(() => _startTime = null),
             ),
             _TimeRow(
-              label: 'Frist',
+              label: l10n.deadline,
               value: _dueTime,
-              emptyText: _mandatory ? 'Standard' : 'Ingen',
+              emptyText: _mandatory ? l10n.defaultLabel : l10n.none,
               onPick: () async {
-                final t = await _pickTime(
-                  _dueTime,
-                  appStateFamilyDefault(context),
-                );
+                final t = await _pickTime(_dueTime, defaultDue);
                 if (t != null) setState(() => _dueTime = t);
               },
               onClear: () => setState(() => _dueTime = null),
             ),
             SwitchListTile(
-              title: const Text('Vis i familiekalenderen'),
-              subtitle: const Text(
-                'Opgaven bliver til en aftale i familiens kalender, når '
-                'kalenderen er sat op.',
-              ),
+              title: Text(l10n.showInCalendar),
+              subtitle: Text(l10n.showInCalendarHelp),
               value: _showInCalendar,
               onChanged: (v) => setState(() => _showInCalendar = v),
             ),
@@ -429,7 +399,7 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
               onPressed: _saving ? null : _save,
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(_saving ? 'Gemmer...' : 'Gem opgave'),
+                child: Text(_saving ? l10n.saving : l10n.saveTask),
               ),
             ),
           ],
@@ -439,7 +409,7 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
   }
 }
 
-/// Familiens nuværende standardfrist, til visning i formularen.
+/// The family's current default deadline, for display in the form.
 String appStateFamilyDefault(BuildContext context) =>
     context.read<AppState>().familySettings.defaultDueTime;
 
@@ -470,7 +440,7 @@ class _TimeRow extends StatelessWidget {
           ? null
           : IconButton(
               icon: const Icon(Icons.clear),
-              tooltip: 'Fjern tid',
+              tooltip: context.l10n.removeTime,
               onPressed: onClear,
             ),
     );

@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/l10n.dart';
 import '../providers/app_state.dart';
+import 'language_screen.dart';
 import 'qr_scan_screen.dart';
 
-/// Første skærm på en ny enhed: forbind til Home Assistant.
+/// The screen on a new device after the language: connect to Home Assistant.
 ///
-/// Enheden tilføjes i Home Assistant (Lommepenge → Tilføj enhed), hvor
-/// rollen vælges, og HA viser en kode. Appen finder selv Home Assistant på
-/// netværket, så man normalt kun skal taste koden. Har enheden kamera, kan
-/// QR-koden scannes i stedet (se `AppState.connectWithCode`/
-/// `connectWithLink`).
+/// The device is added in Home Assistant (Lommepenge → Add device), where the
+/// role is chosen, and HA shows a code. The app finds Home Assistant on the
+/// network by itself, so normally only the code has to be typed. If the
+/// device has a camera, the QR code can be scanned instead (see
+/// `AppState.connectWithCode`/`connectWithLink`).
 class ConnectScreen extends StatefulWidget {
   const ConnectScreen({super.key});
 
@@ -74,9 +76,13 @@ class _ConnectScreenState extends State<ConnectScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final theme = Theme.of(context);
+    final l10n = context.l10n;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Lommepenge')),
+      appBar: AppBar(
+        title: const Text('Lommepenge'),
+        actions: const [LanguageButton()],
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
@@ -86,17 +92,12 @@ class _ConnectScreenState extends State<ConnectScreen> {
               Icon(Icons.home_outlined, size: 64, color: theme.colorScheme.primary),
               const SizedBox(height: 16),
               Text(
-                'Forbind til Home Assistant',
+                l10n.connectTitle,
                 style: theme.textTheme.headlineSmall,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
-              const Text(
-                'Tilføj enheden i Home Assistant: Indstillinger → Enheder og '
-                'tjenester → Lommepenge → Tilføj enhed. Vælg navn og rolle, og '
-                'tast den kode, Home Assistant viser.',
-                textAlign: TextAlign.center,
-              ),
+              Text(l10n.connectInstructions, textAlign: TextAlign.center),
               if (appState.connectionMessage != null) ...[
                 const SizedBox(height: 16),
                 Card(
@@ -113,10 +114,10 @@ class _ConnectScreenState extends State<ConnectScreen> {
               const SizedBox(height: 24),
               TextField(
                 controller: _codeController,
-                decoration: const InputDecoration(
-                  labelText: 'Kode fra Home Assistant',
-                  hintText: 'fx K7M2QDXA',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.codeLabel,
+                  hintText: l10n.codeHint,
+                  border: const OutlineInputBorder(),
                 ),
                 style: theme.textTheme.headlineSmall?.copyWith(letterSpacing: 4),
                 textCapitalization: TextCapitalization.characters,
@@ -127,16 +128,14 @@ class _ConnectScreenState extends State<ConnectScreen> {
               TextField(
                 controller: _addressController,
                 decoration: InputDecoration(
-                  labelText: 'Home Assistant-adresse',
-                  hintText: 'fx 192.168.1.10:8123',
+                  labelText: l10n.addressLabel,
+                  hintText: l10n.addressHint,
                   border: const OutlineInputBorder(),
                   helperText: _searching
-                      ? 'Leder efter Home Assistant på netværket...'
+                      ? l10n.searchingForHa
                       : _foundName != null
-                          ? 'Fundet: $_foundName'
-                          : 'Ikke fundet automatisk - skriv adressen. Den står '
-                              'på siden "Åbn siden med app-download" i Home '
-                              'Assistant.',
+                          ? l10n.foundHa(_foundName!)
+                          : l10n.haNotFound,
                   helperMaxLines: 3,
                   suffixIcon: _searching
                       ? const Padding(
@@ -149,7 +148,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
                         )
                       : IconButton(
                           icon: const Icon(Icons.refresh),
-                          tooltip: 'Søg igen',
+                          tooltip: l10n.searchAgain,
                           onPressed: _discover,
                         ),
                 ),
@@ -162,17 +161,17 @@ class _ConnectScreenState extends State<ConnectScreen> {
               else ...[
                 FilledButton(
                   onPressed: _connectWithCode,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('Forbind'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(l10n.connectButton),
                   ),
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.qr_code_scanner),
-                  label: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('Scan QR-kode i stedet'),
+                  label: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(l10n.scanQrInstead),
                   ),
                   onPressed: _scan,
                 ),

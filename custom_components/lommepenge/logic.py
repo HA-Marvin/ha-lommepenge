@@ -1,15 +1,18 @@
-"""Familiens regler: tilgængelighed, frister, spærring og børne-filtrering.
+"""The family's rules: availability, deadlines, restriction and child filtering.
 
-Rene funktioner uden I/O - en direkte oversættelse af appens
-`logic/recurrence.dart`, `logic/follow_up.dart` og `logic/child_scope.dart`,
-så HA (serveren) og appen (der viser data) regner præcis ens. Alle
-tidspunkter er naive, lokale `datetime`s ligesom appens `DateTime.now()`.
+Pure functions without I/O - a direct translation of the app's
+`logic/recurrence.dart`, `logic/follow_up.dart` and `logic/child_scope.dart`,
+so HA (the server) and the app (which displays the data) calculate exactly
+the same. All times are naive, local `datetime`s just like the app's
+`DateTime.now()`.
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from typing import Any
+
+from .i18n import LocalizedError, translate
 
 AVAILABLE = "available"
 PENDING_APPROVAL = "pendingApproval"
@@ -21,11 +24,15 @@ NOT_SCHEDULED_TODAY = "notScheduledToday"
 RECURRENCES = ("once", "daily", "weekly", "unlimited")
 
 
-# ---- Tidspunkter -----------------------------------------------------------
+class InvalidSetting(LocalizedError, ValueError):
+    """A family setting with an unknown key or an invalid value."""
+
+
+# ---- Times ------------------------------------------------------------------
 
 
 def minutes_of_day(value: Any) -> int | None:
-    """`"HH:MM"` -> minutter efter midnat, eller `None` hvis ugyldig."""
+    """`"HH:MM"` -> minutes after midnight, or `None` if invalid."""
     if not isinstance(value, str):
         return None
     parts = value.strip().split(":")
@@ -41,7 +48,7 @@ def minutes_of_day(value: Any) -> int | None:
 
 
 def normalize_time(value: Any) -> str | None:
-    """Normaliserer et klokkeslæt til `"HH:MM"`, eller `None`."""
+    """Normalizes a time of day to `"HH:MM"`, or `None`."""
     minutes = minutes_of_day(value)
     if minutes is None:
         return None
@@ -49,7 +56,7 @@ def normalize_time(value: Any) -> str | None:
 
 
 def parse_dt(value: str) -> datetime:
-    """ISO-tidspunkt fra appen -> naiv lokal tid."""
+    """ISO time from the app -> naive local time."""
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is not None:
         parsed = parsed.astimezone().replace(tzinfo=None)
@@ -57,7 +64,7 @@ def parse_dt(value: str) -> datetime:
 
 
 def to_iso(value: datetime) -> str:
-    """Naiv lokal tid -> ISO-streng som appens `DateTime.parse` forstår."""
+    """Naive local time -> ISO string the app's `DateTime.parse` understands."""
     return value.isoformat(timespec="milliseconds")
 
 
@@ -71,11 +78,11 @@ def _at_time(day: datetime, hhmm: str) -> datetime:
     return datetime(day.year, day.month, day.day, minutes // 60, minutes % 60)
 
 
-# ---- Opgaver ----------------------------------------------------------------
+# ---- Tasks ------------------------------------------------------------------
 
 
 def normalize_weekdays(weekdays: Any) -> list[int] | None:
-    """Ugedage 1-7; tom liste eller alle 7 betyder "alle dage" (`None`)."""
+    """Weekdays 1-7; an empty list or all 7 means "every day" (`None`)."""
     if not weekdays:
         return None
     unique = sorted({int(d) for d in weekdays if 1 <= int(d) <= 7})
@@ -85,7 +92,7 @@ def normalize_weekdays(weekdays: Any) -> list[int] | None:
 
 
 def normalize_child_ids(child_ids: Any) -> list[str] | None:
-    """Tom liste betyder "alle børn" (`None`); dubletter fjernes."""
+    """An empty list means "all children" (`None`); duplicates are removed."""
     if not child_ids:
         return None
     unique: list[str] = []
@@ -105,7 +112,7 @@ def is_active_on(task: dict[str, Any], day: datetime) -> bool:
 def compute_availability(
     task: dict[str, Any], completions: list[dict[str, Any]], now: datetime
 ) -> str:
-    """Om barnet kan markere opgaven udført nu (kun dette barns completions)."""
+    """Whether the child can mark the task as done now (this child's completions only)."""
     if any(c["status"] == "pending" for c in completions):
         return PENDING_APPROVAL
     recurrence = task.get("recurrence", "once")
@@ -130,13 +137,13 @@ def compute_availability(
     return AVAILABLE
 
 
-# ---- Opfølgning -------------------------------------------------------------
+# ---- Follow-up ----------------------------------------------------------------
 
 
 def effective_due(
     task: dict[str, Any], settings: dict[str, Any], day: datetime
 ) -> datetime | None:
-    """Fristen på dagen, eller `None` for valgfri opgaver."""
+    """The deadline on the day, or `None` for optional tasks."""
     if not task.get("mandatory"):
         return None
     return _at_time(day, task.get("dueTime") or settings["defaultDueTime"])
@@ -148,7 +155,7 @@ def is_late(task: dict[str, Any], settings: dict[str, Any], completed_at: dateti
 
 
 def in_restriction_window(settings: dict[str, Any], now: datetime) -> bool:
-    """Om `now` ligger i spærre-vinduet; vinduer hen over midnat virker."""
+    """Whether `now` is in the restriction window; windows across midnight work."""
     start = minutes_of_day(settings["restrictionStart"]) or 0
     end = minutes_of_day(settings["restrictionEnd"]) or 0
     current = now.hour * 60 + now.minute
@@ -169,11 +176,12 @@ def compute_follow_up(
     settings: dict[str, Any],
     now: datetime,
     suspended_on: str | None,
+    language: str | None = None,
 ) -> dict[str, Any]:
-    """Opfølgning for ét barn.
+    """Follow-up for one child.
 
-    `tasks` er de aktive opgaver der gælder barnet, `completions` barnets
-    egne (alle opgaver).
+    `tasks` are the active tasks that apply to the child, `completions` the
+    child's own (all tasks). `reason` is written in `language`.
     """
     due_today: list[tuple[datetime, dict[str, Any]]] = []
     overdue: list[tuple[datetime, dict[str, Any]]] = []
@@ -185,9 +193,9 @@ def compute_follow_up(
             continue
         for_task = [c for c in completions if c["taskId"] == task["id"]]
         if compute_availability(task, for_task, now) != AVAILABLE:
-            continue  # venter på godkendelse, allerede gjort, eller ikke i dag
-        # 'unlimited'-opgaver er altid tilgængelige - en godkendt udførelse
-        # i dag tæller alligevel som at dagens pligt er gjort.
+            continue  # awaiting approval, already done, or not today
+        # 'unlimited' tasks are always available - an approved completion
+        # today still counts as today's duty being done.
         if any(
             c["status"] == "approved" and parse_dt(c["completedAt"]).date() == now.date()
             for c in for_task
@@ -212,13 +220,13 @@ def compute_follow_up(
     reason: str | None = None
     if restricted:
         if overdue:
-            names = ", ".join(f"{t['title']} (frist {d:%H:%M})" for d, t in overdue)
-            reason = f"Mangler: {names}"
-        else:
-            reason = (
-                "Opgaven er udført for sent - låses op kl. "
-                f"{late_pause_until:%H:%M}"
+            names = ", ".join(
+                translate("reason_overdue_task", language, title=t["title"], due=f"{d:%H:%M}")
+                for d, t in overdue
             )
+            reason = translate("reason_overdue", language, tasks=names)
+        else:
+            reason = translate("reason_late", language, until=f"{late_pause_until:%H:%M}")
 
     return {
         "dueToday": [_due_json(t, d) for d, t in due_today],
@@ -231,7 +239,7 @@ def compute_follow_up(
     }
 
 
-# ---- Familiens indstillinger ------------------------------------------------
+# ---- The family's settings ----------------------------------------------------
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "defaultDueTime": "18:00",
@@ -253,11 +261,11 @@ _INT_SETTINGS = {
 
 
 def validate_setting(key: str, value: Any) -> Any:
-    """Gyldig værdi for én indstilling, ellers `ValueError` (som appen)."""
+    """A valid value for one setting, otherwise `InvalidSetting` (like the app)."""
     if key in _TIME_SETTINGS:
         normalized = normalize_time(None if value is None else str(value))
         if normalized is None:
-            raise ValueError(f"Ugyldigt klokkeslæt for {key}: {value}")
+            raise InvalidSetting("invalid_time", key=key, value=value)
         return normalized
     if key in _INT_SETTINGS:
         minimum, maximum = _INT_SETTINGS[key]
@@ -266,13 +274,15 @@ def validate_setting(key: str, value: Any) -> Any:
         except (TypeError, ValueError):
             number = None
         if number is None or isinstance(value, bool) or not minimum <= number <= maximum:
-            raise ValueError(f"{key} skal være mellem {minimum} og {maximum}: {value}")
+            raise InvalidSetting(
+                "setting_out_of_range", key=key, minimum=minimum, maximum=maximum, value=value
+            )
         return number
-    raise ValueError(f"Ukendt indstilling: {key}")
+    raise InvalidSetting("unknown_setting", key=key)
 
 
 def settings_from(raw: Any) -> dict[str, Any]:
-    """Indstillinger læst defensivt: ugyldige værdier -> standard."""
+    """Settings read defensively: invalid values -> default."""
     settings = dict(DEFAULT_SETTINGS)
     if isinstance(raw, dict):
         for key in DEFAULT_SETTINGS:
@@ -284,9 +294,9 @@ def settings_from(raw: Any) -> dict[str, Any]:
     return settings
 
 
-# ---- Barnets tablet ---------------------------------------------------------
+# ---- The child's tablet -------------------------------------------------------
 
-# Handlinger en barne-tablet må sende. Alt andet kræver en forælder-enhed.
+# Actions a child's tablet may send. Everything else requires a parent device.
 CHILD_ALLOWED_ACTIONS = frozenset({"complete_task"})
 
 
@@ -303,7 +313,7 @@ def task_applies_to_child(task: dict[str, Any], child_id: str) -> bool:
 
 
 def filter_state_for_child(state: dict[str, Any], child_id: str) -> dict[str, Any]:
-    """Kun det ét barns tablet har brug for - ingen søskendes data."""
+    """Only what one child's tablet needs - no siblings' data."""
     paid_out = state.get("paidOutOreByChild") or {}
     suspensions = state.get("restrictionSuspensions") or {}
     return {

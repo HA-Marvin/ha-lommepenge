@@ -1,8 +1,8 @@
-"""App-version pr. enhed: viser når en enhed mangler en opdatering.
+"""App version per device: shows when a device is missing an update.
 
-Selve installationen sker på enheden (Android kræver et tryk), så
-entiteten kan ikke installere - den viser bare status. Appen henter den
-nye version fra HA af sig selv og beder om lov til at installere.
+The installation itself happens on the device (Android requires a tap), so
+the entity cannot install - it only shows the status. The app fetches the new
+version from HA by itself and asks for permission to install it.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ async def async_setup_entry(
 
 
 class AppUpdate(LommepengeAppDeviceEntity, UpdateEntity):
-    _attr_title = "Lommepenge-app"
+    _attr_title = "Lommepenge app"
 
     def __init__(self, runtime: LommepengeRuntime, subentry: ConfigSubentry) -> None:
         super().__init__(runtime, subentry, "app")
@@ -50,7 +50,7 @@ class AppUpdate(LommepengeAppDeviceEntity, UpdateEntity):
     def latest_version(self) -> str | None:
         release = self.runtime.releases.data if self.runtime.releases is not None else None
         if release is None:
-            # Ingen GitHub-nøgle: vis bare den installerede version.
+            # No release found: just show the installed version.
             return self.installed_version
         return release.version
 

@@ -12,24 +12,22 @@ import '../models/child.dart';
 import '../models/completion.dart';
 import '../models/task.dart';
 
-/// Ansvarlig for at åbne og oprette den lokale SQLite-database, samt
-/// lave rå CRUD-operationer på tasks/completions/balance_adjustments/
-/// children.
+/// Responsible for opening and creating the local SQLite database, and for
+/// raw CRUD operations on tasks/completions/balance_adjustments/children.
 ///
-/// Bruger den globale `sqflite.databaseFactory`, så unit-tests kan
-/// erstatte den med `sqflite_common_ffi`s `databaseFactoryFfi` (se
-/// test/task_balance_test.dart) uden nogen særlig test-flag i denne
-/// klasse.
+/// Uses the global `sqflite.databaseFactory`, so unit tests can replace it
+/// with `sqflite_common_ffi`'s `databaseFactoryFfi` (see
+/// test/task_balance_test.dart) without any special test flag in this class.
 class DatabaseHelper {
   DatabaseHelper._internal();
   static final DatabaseHelper instance = DatabaseHelper._internal();
 
-  /// Skal kaldes ÉN gang, tidligt i `main()`, før noget som helst rører
-  /// databasen. Den almindelige `sqflite`-plugin har ingen native
-  /// implementering på Windows/Linux desktop (kun Android/iOS/macOS), så
-  /// der skiftes til `sqflite_common_ffi`'s rene Dart-implementering på
-  /// de platforme. Uden dette hænger appen uendeligt på opstartsskærmen
-  /// på Windows, fordi database-kaldet fejler stille i baggrunden.
+  /// Must be called ONCE, early in `main()`, before anything touches the
+  /// database. The regular `sqflite` plugin has no native implementation on
+  /// Windows/Linux desktop (only Android/iOS/macOS), so on those platforms we
+  /// switch to `sqflite_common_ffi`'s pure Dart implementation. Without this
+  /// the app hangs forever on the start screen on Windows, because the
+  /// database call fails silently in the background.
   static void initializeFactory() {
     if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
       sqfliteFfiInit();
@@ -39,7 +37,7 @@ class DatabaseHelper {
 
   Database? _db;
 
-  /// Sti der bruges til databasen. Overstyres i tests (fx ':memory:').
+  /// Path used for the database. Overridden in tests (e.g. ':memory:').
   String? overridePath;
 
   Future<Database> get database async {
@@ -123,30 +121,28 @@ class DatabaseHelper {
             created_at TEXT NOT NULL
           )
         ''');
-        // En frisk installation starter uden børn: forældrene opretter
-        // selv familiens børn, så der ikke dukker et generisk "Barn 1" op
-        // (fx som enhed i Home Assistant).
+        // A fresh installation starts without children: the parents create
+        // the family's children themselves, so no generic "Child 1" shows up
+        // (e.g. as a device in Home Assistant).
         await _createChildrenTableIfMissing(db);
       },
-      // v1 -> v2: tilføjede 'mandatory'-kolonnen (obligatorisk/valgfri
-      // opgave).
-      // v2 -> v3: tilføjede 'active_weekdays'-kolonnen på tasks
-      // (ugeplan-filter) og 'balance_adjustments'-tabellen (manuel
-      // saldo-justering). Kører automatisk på begge enheders
-      // eksisterende database - bevarer alle nuværende
-      // opgaver/completions, nye kolonner/tabeller starter tomme/null.
-      // v3 -> v4: "flere børn"-featuren. Tilføjede 'children'-tabellen,
-      // 'assigned_child_ids' på tasks (null = "alle børn", jf.
-      // Task.assignedChildIds) og 'child_id' på completions/
-      // balance_adjustments (hvilket barn der optjener/justeres).
-      // Databevarende: en opgradering fra en version uden børn-support
-      // opretter automatisk ét standard-barn og overfører AL eksisterende
-      // completions-/saldo-historik til det, så intet forsvinder eller
-      // ender "forældreløst" - se backfill-blokken nedenfor.
-      // v4 -> v5: tidspunkter og opfølgning. 'start_time'/'due_time'/
-      // 'show_in_calendar' på tasks og 'late' på completions. Eksisterende
-      // opgaver får ingen tider og er ikke i kalenderen; eksisterende
-      // completions tæller som rettidige.
+      // v1 -> v2: added the 'mandatory' column (mandatory/optional task).
+      // v2 -> v3: added the 'active_weekdays' column on tasks (week plan
+      // filter) and the 'balance_adjustments' table (manual balance
+      // adjustment). Runs automatically on existing databases - keeps all
+      // current tasks/completions, new columns/tables start empty/null.
+      // v3 -> v4: the "several children" feature. Added the 'children' table,
+      // 'assigned_child_ids' on tasks (null = "all children", see
+      // Task.assignedChildIds) and 'child_id' on completions/
+      // balance_adjustments (which child earns/is adjusted). Data-preserving:
+      // an upgrade from a version without children support automatically
+      // creates one default child and moves ALL existing completion/balance
+      // history to it, so nothing disappears or ends up "orphaned" - see the
+      // backfill block below.
+      // v4 -> v5: times and follow-up. 'start_time'/'due_time'/
+      // 'show_in_calendar' on tasks and 'late' on completions. Existing tasks
+      // get no times and are not in the calendar; existing completions count
+      // as on time.
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(
@@ -171,19 +167,18 @@ class DatabaseHelper {
             'ALTER TABLE balance_adjustments ADD COLUMN child_id TEXT',
           );
 
-          // Databevarende backfill: kør KUN hvis der endnu ikke findes
-          // nogen børn (dvs. dette er reelt en opgradering fra en
-          // version uden børn-support). Al eksisterende completions-/
-          // saldo-historik (som hidtil ikke havde nogen barn-tilknytning,
-          // fordi appen kun understøttede ét barn) tilhører herefter
-          // automatisk dette ene barn, i stedet for at gå tabt eller
-          // pege på et barn der ikke findes.
+          // Data-preserving backfill: ONLY runs if no children exist yet
+          // (i.e. this really is an upgrade from a version without children
+          // support). All existing completion/balance history (which until
+          // now had no child link, because the app only supported one child)
+          // then automatically belongs to this one child, instead of being
+          // lost or pointing to a child that does not exist.
           final existingChildren = await db.query('children');
           if (existingChildren.isEmpty) {
             final defaultChildId = const Uuid().v4();
             await db.insert('children', {
               'id': defaultChildId,
-              'name': 'Barn 1',
+              'name': 'Child 1',
               'sort_order': 0,
               'created_at': DateTime.now().toIso8601String(),
             });
@@ -213,7 +208,7 @@ class DatabaseHelper {
     );
   }
 
-  /// Lukker databasen. Bruges primært i tests mellem kørsler.
+  /// Closes the database. Mainly used in tests between runs.
   Future<void> close() async {
     final db = _db;
     _db = null;
@@ -241,8 +236,8 @@ class DatabaseHelper {
     );
   }
 
-  /// Soft-delete: markerer opgaven inaktiv i stedet for at slette rækken,
-  /// så historikken for tidligere completions bevares.
+  /// Soft delete: marks the task inactive instead of deleting the row, so
+  /// the history of previous completions is kept.
   Future<void> deactivateTask(String taskId) async {
     final db = await database;
     await db.update(
@@ -270,8 +265,8 @@ class DatabaseHelper {
     return Task.fromMap(rows.first);
   }
 
-  /// Sletter alle tasks. Bruges kun når en telefon overskriver sin lokale
-  /// cache med den fulde state fra skærmens database.
+  /// Deletes all tasks. Only used when the local copy is overwritten with
+  /// the full state from Home Assistant.
   Future<void> clearTasks() async {
     final db = await database;
     await db.delete('tasks');
@@ -328,7 +323,7 @@ class DatabaseHelper {
     await db.delete('completions');
   }
 
-  // ---- Balance-justeringer ------------------------------------------------
+  // ---- Balance adjustments ------------------------------------------------
 
   Future<void> insertBalanceAdjustment(BalanceAdjustment adjustment) async {
     final db = await database;
@@ -351,7 +346,7 @@ class DatabaseHelper {
     await db.delete('balance_adjustments');
   }
 
-  // ---- Børn ---------------------------------------------------------------
+  // ---- Children -----------------------------------------------------------
 
   Future<void> insertChild(Child child) async {
     final db = await database;
@@ -384,8 +379,8 @@ class DatabaseHelper {
     return rows.map(Child.fromMap).toList();
   }
 
-  /// Sletter alle børn. Bruges kun når en telefon overskriver sin lokale
-  /// cache med den fulde state fra skærmens database (se
+  /// Deletes all children. Only used when the local copy is overwritten with
+  /// the full state from Home Assistant (see
   /// TaskRepository.replaceAllFromState).
   Future<void> clearChildren() async {
     final db = await database;

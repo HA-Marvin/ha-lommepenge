@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../providers/app_state.dart';
 
-/// Lille ikon i app-baren med forbindelsen til Home Assistant. Tryk
-/// viser seneste sync-besked.
+/// Small icon in the app bar with the connection to Home Assistant. Tapping
+/// shows the latest sync message.
 class SyncIndicator extends StatelessWidget {
   final AppState appState;
   const SyncIndicator({super.key, required this.appState});
@@ -13,7 +14,7 @@ class SyncIndicator extends StatelessWidget {
     IconData icon;
     Color? color;
     switch (appState.syncStatus) {
-      case SyncStatus.forbundet:
+      case SyncStatus.connected:
         icon = Icons.wifi;
         color = Colors.green;
         break;
@@ -21,24 +22,23 @@ class SyncIndicator extends StatelessWidget {
         icon = Icons.wifi_off;
         color = Colors.red;
         break;
-      case SyncStatus.synkroniserer:
+      case SyncStatus.syncing:
         icon = Icons.sync;
         color = Colors.orange;
         break;
-      case SyncStatus.ukendt:
+      case SyncStatus.unknown:
         icon = Icons.wifi_off;
         color = Colors.grey;
         break;
     }
+    final l10n = context.l10n;
     return IconButton(
       icon: Icon(icon, color: color),
-      tooltip: appState.syncMessage ?? 'Sync-status',
+      tooltip: appState.syncMessage ?? l10n.syncStatus,
       onPressed: () {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              appState.syncMessage ?? 'Forbundet til Home Assistant.',
-            ),
+            content: Text(appState.syncMessage ?? l10n.connectedToHa),
           ),
         );
       },

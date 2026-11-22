@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/l10n.dart';
 import '../models/task.dart';
 import '../providers/app_state.dart';
 import '../widgets/child_task_list.dart';
@@ -10,9 +11,9 @@ import '../widgets/update_banner.dart';
 import 'parent_home_screen.dart';
 import 'pin_entry_screen.dart';
 
-/// Beder om forælder-PIN og åbner forælder-tilstand. Fælles for
-/// forælder-telefonens og køleskabsskærmens visning; findes bevidst ikke
-/// på barnets tablet.
+/// Asks for the parent PIN and opens parent mode. Shared by the parent
+/// phone's and the family screen's views; deliberately does not exist on the
+/// child's tablet.
 Future<void> openParentMode(BuildContext context) async {
   final navigator = Navigator.of(context);
   final appState = context.read<AppState>();
@@ -27,11 +28,10 @@ Future<void> openParentMode(BuildContext context) async {
   appState.exitParentMode();
 }
 
-/// Forælder-telefonens visning: ÉN fælles liste over opgaver (uanset
-/// hvilket/hvilke børn de gælder for), samt hvert barns egen saldo og
-/// ugentlige fremskridtsvisning øverst. Køleskabsskærmen bruger i stedet
-/// `ScreenOverviewScreen` (én kolonne pr. barn), og barnets tablet
-/// `ChildTabletHomeScreen`.
+/// The parent phone's view: ONE shared list of tasks (regardless of which
+/// child/children they apply to), with each child's own balance and weekly
+/// progress at the top. The family screen uses `ScreenOverviewScreen` (one
+/// column per child) instead, and the child's tablet `ChildTabletHomeScreen`.
 class ChildHomeScreen extends StatefulWidget {
   const ChildHomeScreen({super.key});
 
@@ -55,28 +55,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
     if (mounted) await _trySync();
   }
 
-  Future<void> _completeTask(
-    AppState appState,
-    Task task,
-    String childId,
-  ) async {
-    try {
-      await appState.completeTask(task, childId: childId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sendt til godkendelse!')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
-      }
-    }
-  }
-
-  /// Bygger børnenes tilgængeligheds-status for [task], ét indgang pr.
-  /// reelt tildelt barn (jf. den dynamiske "alle børn") - se [TaskCard].
+  /// Builds the children's availability status for [task], one entry per
+  /// actually assigned child (see the dynamic "all children") - see [TaskCard].
   List<ChildTaskStatus> _childStatusesFor(AppState appState, Task task) {
     final childIds = appState.resolvedChildIdsFor(task);
     final childrenById = appState.childrenById;
@@ -98,6 +78,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
+    final l10n = context.l10n;
 
     return Scaffold(
       appBar: AppBar(
@@ -106,7 +87,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
           SyncIndicator(appState: appState),
           IconButton(
             icon: const Icon(Icons.lock_outline),
-            tooltip: 'Forælder-tilstand',
+            tooltip: l10n.parentMode,
             onPressed: _openParentMode,
           ),
         ],
@@ -124,8 +105,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                 padding: const EdgeInsets.all(32),
                 child: Center(
                   child: Text(
-                    'Der er ingen opgaver endnu. Bed en forælder om at '
-                    'oprette nogle i forælder-tilstand.',
+                    l10n.noTasksAskParent,
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
@@ -136,8 +116,12 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                 (task) => TaskCard(
                   task: task,
                   childStatuses: _childStatusesFor(appState, task),
-                  onComplete: (childId) =>
-                      _completeTask(appState, task, childId),
+                  onComplete: (childId) => completeTaskWithFeedback(
+                    context,
+                    appState,
+                    task,
+                    childId,
+                  ),
                 ),
               ),
             const SizedBox(height: 24),
@@ -148,9 +132,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
   }
 }
 
-/// Vandret, scrollbar række med ét saldo-kort pr. barn - "op til typisk
-/// 3 børn ved siden af hinanden", men uden noget hårdt loft: flere børn
-/// scroller blot vandret i stedet for at klemmes ind.
+/// Horizontal, scrollable row with one balance card per child - "typically up
+/// to 3 children side by side", but without a hard limit: more children
+/// simply scroll horizontally instead of being squeezed in.
 class _ChildBalanceRow extends StatelessWidget {
   final AppState appState;
   const _ChildBalanceRow({required this.appState});
@@ -179,4 +163,3 @@ class _ChildBalanceRow extends StatelessWidget {
     );
   }
 }
-
