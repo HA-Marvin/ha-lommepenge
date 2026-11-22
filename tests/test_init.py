@@ -1,16 +1,21 @@
-"""Tests for entiteter, services, webhook og genparring."""
+"""Entiteter, services, hændelser og gemning."""
 
 from __future__ import annotations
+
+from datetime import datetime
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
-from pytest_homeassistant_custom_component.common import async_capture_events
-from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_capture_events,
+    async_fire_time_changed,
+)
 
 from custom_components.lommepenge.const import DOMAIN, EVENT_LOMMEPENGE
 
-from .conftest import BASE, SCREEN_ID, WEBHOOK_ID
+from .conftest import add_child, setup_entry
 
 
 def _entity_id(hass: HomeAssistant, platform: str, unique_id: str) -> str:
@@ -19,185 +24,144 @@ def _entity_id(hass: HomeAssistant, platform: str, unique_id: str) -> str:
     return entity_id
 
 
-def _action_calls(aioclient_mock: AiohttpClientMocker) -> list[dict]:
-    return [c[2] for c in aioclient_mock.mock_calls if str(c[1]).endswith("/ha/action")]
-
-
-async def test_entities(hass: HomeAssistant, setup_integration) -> None:
-    assert setup_integration.state is ConfigEntryState.LOADED
-
-    balance = hass.states.get(_entity_id(hass, "sensor", f"{SCREEN_ID}_emma_balance"))
-    assert float(balance.state) == 12.5
-    assert balance.attributes["unit_of_measurement"] == "DKK"
-
-    restricted = hass.states.get(
-        _entity_id(hass, "binary_sensor", f"{SCREEN_ID}_emma_restricted")
+async def _family_with_task(hass: HomeAssistant, entry: MockConfigEntry):
+    runtime = await setup_entry(hass, entry)
+    await add_child(runtime, "emma", "Emma")
+    await runtime.async_apply(
+        {
+            "type": "create_task",
+            "payload": {
+                "id": "t1",
+                "title": "Tøm opvaskeren",
+                "amountOre": 500,
+                "recurrence": "daily",
+                "mandatory": True,
+            },
+        }
     )
-    assert restricted.state == "on"
-    assert restricted.attributes["child_id"] == "emma"
-    assert restricted.attributes["overdue"] == [{"task": "Tøm opvaskeren", "due": "18:00"}]
-
-    oskar = hass.states.get(_entity_id(hass, "binary_sensor", f"{SCREEN_ID}_oskar_restricted"))
-    assert oskar.state == "off"
-
-    pending = hass.states.get(_entity_id(hass, "sensor", f"{SCREEN_ID}_pending_approvals"))
-    assert pending.state == "1"
-    assert pending.attributes["pending"][0]["completion_id"] == "c-1"
-
-    due = hass.states.get(_entity_id(hass, "time", f"{SCREEN_ID}_default_due_time"))
-    assert due.state == "18:00:00"
-    pause = hass.states.get(_entity_id(hass, "number", f"{SCREEN_ID}_late_pause_minutes"))
-    assert float(pause.state) == 10
+    await hass.async_block_till_done()
+    return runtime
 
 
-async def test_webhook_url_is_registered(
-    hass: HomeAssistant, setup_integration, aioclient_mock: AiohttpClientMocker
+async def test_restriction_and_events(
+    hass: HomeAssistant, config_entry: MockConfigEntry, freezer
 ) -> None:
-    calls = [c[2] for c in aioclient_mock.mock_calls if str(c[1]).endswith("/ha/webhook")]
-    assert calls == [{"url": f"http://10.0.0.2:8123/api/webhook/{WEBHOOK_ID}"}]
-
-
-async def test_approve_service(
-    hass: HomeAssistant, setup_integration, aioclient_mock: AiohttpClientMocker
-) -> None:
-    await hass.services.async_call(
-        DOMAIN, "approve", {"completion_id": "c-1"}, blocking=True
-    )
-    assert _action_calls(aioclient_mock)[-1] == {
-        "type": "approve_completion",
-        "payload": {"completionId": "c-1"},
-    }
-
-
-async def test_reject_and_suspend_services(
-    hass: HomeAssistant, setup_integration, aioclient_mock: AiohttpClientMocker
-) -> None:
-    await hass.services.async_call(DOMAIN, "reject", {"completion_id": "c-1"}, blocking=True)
-    await hass.services.async_call(
-        DOMAIN, "suspend_restriction", {"child_id": "emma"}, blocking=True
-    )
-    assert _action_calls(aioclient_mock)[-2:] == [
-        {"type": "reject_completion", "payload": {"completionId": "c-1"}},
-        {"type": "suspend_restriction", "payload": {"childId": "emma"}},
-    ]
-
-
-async def test_suspend_button(
-    hass: HomeAssistant, setup_integration, aioclient_mock: AiohttpClientMocker
-) -> None:
-    button = _entity_id(hass, "button", f"{SCREEN_ID}_emma_suspend_restriction")
-    await hass.services.async_call("button", "press", {"entity_id": button}, blocking=True)
-    assert _action_calls(aioclient_mock)[-1] == {
-        "type": "suspend_restriction",
-        "payload": {"childId": "emma"},
-    }
-
-
-async def test_settings_can_be_changed_from_ha(
-    hass: HomeAssistant, setup_integration, aioclient_mock: AiohttpClientMocker
-) -> None:
-    due = _entity_id(hass, "time", f"{SCREEN_ID}_default_due_time")
-    await hass.services.async_call(
-        "time", "set_value", {"entity_id": due, "time": "17:30:00"}, blocking=True
-    )
-    pause = _entity_id(hass, "number", f"{SCREEN_ID}_late_pause_minutes")
-    await hass.services.async_call(
-        "number", "set_value", {"entity_id": pause, "value": 15}, blocking=True
-    )
-    assert _action_calls(aioclient_mock)[-2:] == [
-        {"type": "set_setting", "payload": {"key": "defaultDueTime", "value": "17:30"}},
-        {"type": "set_setting", "payload": {"key": "latePauseMinutes", "value": 15}},
-    ]
-
-
-async def test_webhook_fires_event(
-    hass: HomeAssistant, setup_integration, hass_client_no_auth
-) -> None:
+    freezer.move_to("2026-11-23 16:00:00+01:00")
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+    runtime = await _family_with_task(hass, config_entry)
     events = async_capture_events(hass, EVENT_LOMMEPENGE)
-    client = await hass_client_no_auth()
-    response = await client.post(
-        f"/api/webhook/{WEBHOOK_ID}",
-        json={"event": "completion_pending", "completionId": "c-2", "childName": "Emma"},
+    entry_id = config_entry.entry_id
+
+    restricted_id = _entity_id(hass, "binary_sensor", f"{entry_id}_emma_restricted")
+    assert hass.states.get(restricted_id).state == "off"
+
+    # Fristen passerer: spærret, uden at nogen har gjort noget.
+    freezer.move_to("2026-11-23 18:05:00+01:00")
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    state = hass.states.get(restricted_id)
+    assert state.state == "on"
+    assert state.attributes["reason"] == "Mangler: Tøm opvaskeren (frist 18:00)"
+    assert [e.data["event"] for e in events] == ["restriction_changed"]
+
+    # Barnet markerer udført (for sent): afventer godkendelse + pausetid.
+    completion = await runtime.async_apply(
+        {"type": "complete_task", "payload": {"taskId": "t1", "childId": "emma"}}
     )
-    assert response.status == 200
     await hass.async_block_till_done()
-    assert len(events) == 1
-    assert events[0].data["event"] == "completion_pending"
-    assert events[0].data["completionId"] == "c-2"
-    assert events[0].data["config_entry_id"] == setup_integration.entry_id
+    pending_event = events[-1]
+    assert pending_event.data["event"] == "completion_pending"
+    assert pending_event.data["childName"] == "Emma"
+    assert pending_event.data["taskTitle"] == "Tøm opvaskeren"
+    assert pending_event.data["late"] is True
+    assert pending_event.data["config_entry_id"] == entry_id
+    pending_id = _entity_id(hass, "sensor", f"{entry_id}_pending_approvals")
+    assert hass.states.get(pending_id).state == "1"
+    assert hass.states.get(restricted_id).state == "on"  # pausetid
 
-
-async def test_revoked_token_starts_reauth(
-    hass: HomeAssistant, config_entry, aioclient_mock: AiohttpClientMocker
-) -> None:
-    aioclient_mock.get(f"{BASE}/ha/summary", status=401, json={"error": "Ugyldig"})
-    config_entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(config_entry.entry_id)
+    freezer.move_to("2026-11-23 18:16:00+01:00")
+    async_fire_time_changed(hass)
     await hass.async_block_till_done()
+    assert hass.states.get(restricted_id).state == "off"
 
-    assert config_entry.state is ConfigEntryState.SETUP_ERROR
-    flows = hass.config_entries.flow.async_progress()
-    assert any(f["context"]["source"] == "reauth" for f in flows)
-
-
-async def test_new_child_gets_entities(
-    hass: HomeAssistant,
-    setup_integration,
-    aioclient_mock: AiohttpClientMocker,
-    summary,
-) -> None:
-    summary["children"].append({**summary["children"][1], "id": "bella", "name": "Bella"})
-    aioclient_mock.clear_requests()
-    aioclient_mock.get(f"{BASE}/ha/summary", json=summary)
-    await setup_integration.runtime_data.async_refresh()
+    await hass.services.async_call(
+        DOMAIN, "approve", {"completion_id": completion["id"]}, blocking=True
+    )
     await hass.async_block_till_done()
+    assert events[-1].data["event"] == "completion_approved"
+    balance_id = _entity_id(hass, "sensor", f"{entry_id}_emma_balance")
+    assert float(hass.states.get(balance_id).state) == 5.0
 
-    _entity_id(hass, "binary_sensor", f"{SCREEN_ID}_bella_restricted")
 
-
-async def test_renamed_and_deleted_children_follow_the_app(
-    hass: HomeAssistant,
-    setup_integration,
-    aioclient_mock: AiohttpClientMocker,
-    summary,
+async def test_settings_and_suspend_from_ha(
+    hass: HomeAssistant, config_entry: MockConfigEntry, freezer
 ) -> None:
+    freezer.move_to("2026-11-23 19:00:00+01:00")
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+    runtime = await _family_with_task(hass, config_entry)
+    entry_id = config_entry.entry_id
+
+    restricted_id = _entity_id(hass, "binary_sensor", f"{entry_id}_emma_restricted")
+    assert hass.states.get(restricted_id).state == "on"
+    button = _entity_id(hass, "button", f"{entry_id}_emma_suspend_restriction")
+    await hass.services.async_call("button", "press", {"entity_id": button}, blocking=True)
+    await hass.async_block_till_done()
+    assert hass.states.get(restricted_id).state == "off"
+
+    due = _entity_id(hass, "time", f"{entry_id}_default_due_time")
+    await hass.services.async_call(
+        "time", "set_value", {"entity_id": due, "time": "17:15"}, blocking=True
+    )
+    pause = _entity_id(hass, "number", f"{entry_id}_late_pause_minutes")
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": pause, "value": 25}, blocking=True
+    )
+    assert runtime.family.settings["defaultDueTime"] == "17:15"
+    assert runtime.family.settings["latePauseMinutes"] == 25
+
+
+async def test_child_devices_follow_the_app(
+    hass: HomeAssistant, config_entry: MockConfigEntry
+) -> None:
+    runtime = await setup_entry(hass, config_entry)
     dev_reg = dr.async_get(hass)
-    emma = dev_reg.async_get_device(identifiers={(DOMAIN, f"{SCREEN_ID}_emma")})
-    oskar_entity = _entity_id(hass, "binary_sensor", f"{SCREEN_ID}_oskar_restricted")
-    assert emma.name == "Lommepenge Emma"
+    # Ingen børn: kun familiens egen enhed.
+    devices = dr.async_entries_for_config_entry(dev_reg, config_entry.entry_id)
+    assert [d.identifiers for d in devices] == [{(DOMAIN, config_entry.entry_id)}]
 
-    summary["children"][0]["name"] = "Emilie"
-    del summary["children"][1]
-    aioclient_mock.clear_requests()
-    aioclient_mock.get(f"{BASE}/ha/summary", json=summary)
-    await setup_integration.runtime_data.async_refresh()
+    await add_child(runtime, "emma", "Emma")
     await hass.async_block_till_done()
+    identifier = (DOMAIN, f"{config_entry.entry_id}_emma")
+    assert dev_reg.async_get_device(identifiers={identifier}).name == "Lommepenge Emma"
 
-    assert dev_reg.async_get(emma.id).name == "Lommepenge Emilie"
-    assert dev_reg.async_get_device(identifiers={(DOMAIN, f"{SCREEN_ID}_oskar")}) is None
-    assert er.async_get(hass).async_get(oskar_entity) is None
-    # Skærmens egen enhed bliver stående.
-    assert dev_reg.async_get_device(identifiers={(DOMAIN, SCREEN_ID)}) is not None
-
-
-async def test_no_children_gives_only_screen_device(
-    hass: HomeAssistant,
-    config_entry,
-    aioclient_mock: AiohttpClientMocker,
-    summary,
-) -> None:
-    summary["children"] = []
-    summary["pending"] = []
-    aioclient_mock.get(f"{BASE}/ha/summary", json=summary)
-    aioclient_mock.post(f"{BASE}/ha/webhook", json={"ok": True})
-    config_entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await runtime.async_apply({"type": "rename_child", "payload": {"id": "emma", "name": "Emilie"}})
     await hass.async_block_till_done()
+    assert dev_reg.async_get_device(identifiers={identifier}).name == "Lommepenge Emilie"
 
-    devices = dr.async_entries_for_config_entry(dr.async_get(hass), config_entry.entry_id)
-    assert [d.identifiers for d in devices] == [{(DOMAIN, SCREEN_ID)}]
+    await runtime.async_apply({"type": "delete_child", "payload": {"id": "emma"}})
+    await hass.async_block_till_done()
+    assert dev_reg.async_get_device(identifiers={identifier}) is None
 
 
-async def test_unload(hass: HomeAssistant, setup_integration) -> None:
-    assert await hass.config_entries.async_unload(setup_integration.entry_id)
-    assert setup_integration.state is ConfigEntryState.NOT_LOADED
+async def test_data_survives_restart(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
+    runtime = await setup_entry(hass, config_entry)
+    await add_child(runtime, "emma", "Emma")
+    assert await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert config_entry.runtime_data.family.child("emma")["name"] == "Emma"
+
+    assert await hass.config_entries.async_unload(config_entry.entry_id)
+    assert config_entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_old_version_asks_for_new_setup(hass: HomeAssistant) -> None:
+    old = MockConfigEntry(domain=DOMAIN, version=1, data={"host": "192.168.1.50"})
+    old.add_to_hass(hass)
+    assert not await hass.config_entries.async_setup(old.entry_id)
+    assert old.state is ConfigEntryState.MIGRATION_ERROR
+
+
+def test_now_is_naive_local() -> None:
+    from custom_components.lommepenge.runtime import local_now
+
+    assert isinstance(local_now(), datetime) and local_now().tzinfo is None

@@ -5,19 +5,19 @@ from __future__ import annotations
 from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .api import LommepengeError
-from .coordinator import LommepengeConfigEntry, LommepengeCoordinator
+
+from .coordinator import LommepengeConfigEntry, LommepengeCoordinator, LommepengeError
 from .entity import LommepengeChildEntity, async_setup_child_entities
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: LommepengeConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    coordinator = entry.runtime_data
+    coordinator = entry.runtime_data.coordinator
     async_setup_child_entities(
         coordinator,
         async_add_entities,

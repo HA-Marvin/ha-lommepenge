@@ -8,10 +8,10 @@ from homeassistant.components.time import TimeEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .api import LommepengeError
-from .coordinator import LommepengeConfigEntry, LommepengeCoordinator
+
+from .coordinator import LommepengeConfigEntry, LommepengeCoordinator, LommepengeError
 from .entity import LommepengeEntity
 
 # HA-nøgle -> appens indstillingsnøgle (se FamilySettings i appen).
@@ -25,9 +25,9 @@ TIME_SETTINGS = {
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: LommepengeConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    coordinator = entry.runtime_data
+    coordinator = entry.runtime_data.coordinator
     async_add_entities(
         SettingTime(coordinator, key, setting) for key, setting in TIME_SETTINGS.items()
     )

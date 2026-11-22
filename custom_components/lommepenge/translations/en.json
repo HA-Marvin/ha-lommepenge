@@ -1,48 +1,100 @@
 {
   "config": {
-    "flow_title": "{name}",
     "step": {
       "user": {
-        "title": "Connect to the family screen",
-        "description": "Enter the family screen's IP address (shown in the app under Parent mode → Pairing) and the family parent PIN.",
+        "title": "Set up Lommepenge",
+        "description": "Home Assistant stores the family's tasks and pocket money. The app on the family screen, the parents' phones and the children's tablets connects here.",
         "data": {
-          "host": "IP address",
-          "port": "Port",
-          "pin": "Parent PIN"
-        }
-      },
-      "zeroconf_confirm": {
-        "title": "Lommepenge found",
-        "description": "The family screen \"{name}\" ({host}) was found on the network. Confirm with the family parent PIN.",
-        "data": {
-          "pin": "Parent PIN"
-        }
-      },
-      "reauth_confirm": {
-        "title": "Reconnect",
-        "description": "The connection was revoked in the app. Confirm with the parent PIN to reconnect.",
-        "data": {
-          "pin": "Parent PIN"
+          "family_name": "Family name",
+          "pin": "Parent PIN (4-8 digits)"
+        },
+        "data_description": {
+          "pin": "Unlocks the parent part of the app on the family screen and the parents' phones."
         }
       }
     },
     "error": {
-      "cannot_connect": "Could not reach the family screen. Check the IP address and that the app is open on the screen.",
-      "invalid_auth": "Wrong PIN.",
-      "too_many_attempts": "Too many wrong PIN attempts. Wait a minute and try again.",
-      "unknown": "Unexpected error."
+      "name_required": "Enter a name.",
+      "invalid_pin": "The PIN must be 4-8 digits."
     },
     "abort": {
-      "already_configured": "This family screen is already set up.",
-      "reauth_successful": "Reconnected.",
-      "wrong_screen": "The PIN belongs to a different family screen."
+      "single_instance_allowed": "Lommepenge is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Lommepenge settings",
+        "description": "With a GitHub token, Home Assistant fetches new versions of the app and hands them to the family's devices.",
+        "data": {
+          "github_token": "GitHub token (read access to the app repository)",
+          "github_repo": "App repository",
+          "pin": "New parent PIN (leave empty to keep)"
+        }
+      }
+    },
+    "error": {
+      "invalid_token": "GitHub rejected the token, or it has no access to the repository.",
+      "cannot_connect": "Could not reach GitHub.",
+      "invalid_pin": "The PIN must be 4-8 digits."
+    }
+  },
+  "config_subentries": {
+    "device": {
+      "entry_type": "Device",
+      "initiate_flow": {
+        "user": "Add device"
+      },
+      "step": {
+        "user": {
+          "title": "Add device",
+          "description": "Add the family screen, a parent's phone or a child's tablet.",
+          "data": {
+            "name": "Name",
+            "role": "Role"
+          }
+        },
+        "child": {
+          "title": "Which child?",
+          "description": "The tablet will only show this child's tasks.",
+          "data": {
+            "child_id": "Child"
+          }
+        },
+        "pair": {
+          "title": "Scan with {name}",
+          "description": "Scan the QR code with the device's camera, install the app, and tap \"Open the app and connect\".\n\n![QR code]({qr_url})\n\nOr open this link on the device: {install_url}\n\nThe code works once, until {expires}. Press Submit when you are done."
+        },
+        "reconfigure": {
+          "title": "New QR code for {name}",
+          "description": "Use this after reinstalling the app on the device. The old connection stops working once the device connects again.\n\n![QR code]({qr_url})\n\nOr open: {install_url}\n\nValid until {expires}."
+        }
+      },
+      "error": {
+        "name_required": "Enter a name."
+      },
+      "abort": {
+        "not_loaded": "Lommepenge is not running.",
+        "no_children": "Create the child in the app first (on the family screen or a parent's phone).",
+        "reconfigure_successful": "Done."
+      }
+    }
+  },
+  "selector": {
+    "role": {
+      "options": {
+        "screen": "Family screen (all children)",
+        "parent": "Parent's phone",
+        "child": "Child's tablet (one child)"
+      }
     }
   },
   "entity": {
     "sensor": {
       "pending_approvals": { "name": "Awaiting approval" },
       "balance": { "name": "Balance" },
-      "earned_this_week": { "name": "Earned this week" }
+      "earned_this_week": { "name": "Earned this week" },
+      "last_seen": { "name": "Last contact" }
     },
     "binary_sensor": {
       "restricted": { "name": "Tablet restricted" },
@@ -60,7 +112,10 @@
       "late_pause_minutes": { "name": "Pause when done late" },
       "warning_minutes": { "name": "Warning before deadline" },
       "winter_from_week": { "name": "Winter from week" },
-      "winter_to_week": { "name": "Winter to week" }
+      "winter_to_week": { "name": "Winter until week" }
+    },
+    "update": {
+      "app": { "name": "App" }
     }
   },
   "services": {
@@ -68,24 +123,21 @@
       "name": "Approve task",
       "description": "Approves a completed task so the amount is added to the child's balance.",
       "fields": {
-        "completion_id": { "name": "Completion ID", "description": "ID from the lommepenge_event event or the \"Awaiting approval\" sensor." },
-        "config_entry_id": { "name": "Family screen", "description": "Only needed with several screens." }
+        "completion_id": { "name": "Completion ID", "description": "completionId from the lommepenge_event event." }
       }
     },
     "reject": {
       "name": "Reject task",
-      "description": "Rejects a completed task. The child has to do it again.",
+      "description": "Rejects a completed task. The child can do it again.",
       "fields": {
-        "completion_id": { "name": "Completion ID", "description": "ID from the lommepenge_event event or the \"Awaiting approval\" sensor." },
-        "config_entry_id": { "name": "Family screen", "description": "Only needed with several screens." }
+        "completion_id": { "name": "Completion ID", "description": "completionId from the lommepenge_event event." }
       }
     },
     "suspend_restriction": {
       "name": "Lift restriction today",
       "description": "Lifts the child's restriction for the rest of today.",
       "fields": {
-        "child_id": { "name": "Child ID", "description": "The child_id attribute of the child's \"Tablet restricted\" sensor." },
-        "config_entry_id": { "name": "Family screen", "description": "Only needed with several screens." }
+        "child_id": { "name": "Child ID", "description": "The child_id attribute of the child's \"Tablet restricted\" sensor." }
       }
     }
   }

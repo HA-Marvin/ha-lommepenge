@@ -1,48 +1,100 @@
 {
   "config": {
-    "flow_title": "{name}",
     "step": {
       "user": {
-        "title": "Forbind til køleskabsskærmen",
-        "description": "Indtast køleskabsskærmens IP-adresse (vises i appen under Forælder-tilstand → Parring) og familiens forælder-PIN.",
+        "title": "Opsæt Lommepenge",
+        "description": "Home Assistant gemmer familiens opgaver og lommepenge. Appen på den fælles skærm, forældrenes telefoner og børnenes tablets forbinder hertil.",
         "data": {
-          "host": "IP-adresse",
-          "port": "Port",
-          "pin": "Forælder-PIN"
-        }
-      },
-      "zeroconf_confirm": {
-        "title": "Lommepenge fundet",
-        "description": "Køleskabsskærmen \"{name}\" ({host}) er fundet på netværket. Bekræft med familiens forælder-PIN.",
-        "data": {
-          "pin": "Forælder-PIN"
-        }
-      },
-      "reauth_confirm": {
-        "title": "Forbind igen",
-        "description": "Forbindelsen til køleskabsskærmen er afbrudt i appen. Bekræft med forælder-PIN for at forbinde igen.",
-        "data": {
-          "pin": "Forælder-PIN"
+          "family_name": "Familiens navn",
+          "pin": "Forælder-PIN (4-8 cifre)"
+        },
+        "data_description": {
+          "pin": "Låser forælder-delen op i appen på den fælles skærm og forældrenes telefoner."
         }
       }
     },
     "error": {
-      "cannot_connect": "Kunne ikke nå køleskabsskærmen. Tjek IP-adressen, og at appen er åben på skærmen.",
-      "invalid_auth": "Forkert PIN-kode.",
-      "too_many_attempts": "For mange forkerte PIN-forsøg. Vent et minut og prøv igen.",
-      "unknown": "Uventet fejl."
+      "name_required": "Skriv et navn.",
+      "invalid_pin": "PIN-koden skal være 4-8 cifre."
     },
     "abort": {
-      "already_configured": "Denne køleskabsskærm er allerede sat op.",
-      "reauth_successful": "Forbundet igen.",
-      "wrong_screen": "PIN-koden passer til en anden køleskabsskærm."
+      "single_instance_allowed": "Lommepenge er allerede sat op."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Lommepenge-indstillinger",
+        "description": "Med en GitHub-nøgle henter Home Assistant nye versioner af appen og giver dem videre til familiens enheder.",
+        "data": {
+          "github_token": "GitHub-nøgle (læseadgang til app-repoet)",
+          "github_repo": "App-repo",
+          "pin": "Ny forælder-PIN (tom = behold)"
+        }
+      }
+    },
+    "error": {
+      "invalid_token": "GitHub afviste nøglen, eller den har ikke adgang til repoet.",
+      "cannot_connect": "Kunne ikke nå GitHub.",
+      "invalid_pin": "PIN-koden skal være 4-8 cifre."
+    }
+  },
+  "config_subentries": {
+    "device": {
+      "entry_type": "Enhed",
+      "initiate_flow": {
+        "user": "Tilføj enhed"
+      },
+      "step": {
+        "user": {
+          "title": "Tilføj enhed",
+          "description": "Tilføj den fælles skærm, en forælders telefon eller et barns tablet.",
+          "data": {
+            "name": "Navn",
+            "role": "Rolle"
+          }
+        },
+        "child": {
+          "title": "Hvilket barn?",
+          "description": "Tabletten viser kun dette barns opgaver.",
+          "data": {
+            "child_id": "Barn"
+          }
+        },
+        "pair": {
+          "title": "Scan med {name}",
+          "description": "Scan QR-koden med enhedens kamera, installér appen, og tryk på \"Åbn appen og forbind\".\n\n![QR-kode]({qr_url})\n\nEller åbn dette link på enheden: {install_url}\n\nKoden virker én gang, indtil kl. {expires}. Tryk Send, når du er færdig."
+        },
+        "reconfigure": {
+          "title": "Ny QR-kode til {name}",
+          "description": "Bruges efter en geninstallation af appen på enheden. Den gamle forbindelse holder op med at virke, når enheden forbinder igen.\n\n![QR-kode]({qr_url})\n\nEller åbn: {install_url}\n\nGælder til kl. {expires}."
+        }
+      },
+      "error": {
+        "name_required": "Skriv et navn."
+      },
+      "abort": {
+        "not_loaded": "Lommepenge kører ikke.",
+        "no_children": "Opret først barnet i appen (på den fælles skærm eller en forælders telefon).",
+        "reconfigure_successful": "Færdig."
+      }
+    }
+  },
+  "selector": {
+    "role": {
+      "options": {
+        "screen": "Fælles skærm (alle børn)",
+        "parent": "Forælders telefon",
+        "child": "Barnets tablet (ét barn)"
+      }
     }
   },
   "entity": {
     "sensor": {
       "pending_approvals": { "name": "Venter på godkendelse" },
       "balance": { "name": "Saldo" },
-      "earned_this_week": { "name": "Optjent denne uge" }
+      "earned_this_week": { "name": "Optjent denne uge" },
+      "last_seen": { "name": "Sidste kontakt" }
     },
     "binary_sensor": {
       "restricted": { "name": "Tablet spærret" },
@@ -57,10 +109,13 @@
       "restriction_end": { "name": "Spærretid til" }
     },
     "number": {
-      "late_pause_minutes": { "name": "Pausetid ved for sent udført" },
+      "late_pause_minutes": { "name": "Pausetid ved for sent" },
       "warning_minutes": { "name": "Advarsel før frist" },
       "winter_from_week": { "name": "Vinter fra uge" },
       "winter_to_week": { "name": "Vinter til uge" }
+    },
+    "update": {
+      "app": { "name": "App" }
     }
   },
   "services": {
@@ -68,24 +123,21 @@
       "name": "Godkend opgave",
       "description": "Godkender en udført opgave, så beløbet lægges til barnets saldo.",
       "fields": {
-        "completion_id": { "name": "Udførelses-id", "description": "Id fra hændelsen lommepenge_event eller sensoren \"Venter på godkendelse\"." },
-        "config_entry_id": { "name": "Køleskabsskærm", "description": "Kun nødvendig med flere skærme." }
+        "completion_id": { "name": "Udførelses-id", "description": "completionId fra hændelsen lommepenge_event." }
       }
     },
     "reject": {
       "name": "Afvis opgave",
-      "description": "Afviser en udført opgave. Barnet skal lave den igen.",
+      "description": "Afviser en udført opgave. Barnet kan lave den igen.",
       "fields": {
-        "completion_id": { "name": "Udførelses-id", "description": "Id fra hændelsen lommepenge_event eller sensoren \"Venter på godkendelse\"." },
-        "config_entry_id": { "name": "Køleskabsskærm", "description": "Kun nødvendig med flere skærme." }
+        "completion_id": { "name": "Udførelses-id", "description": "completionId fra hændelsen lommepenge_event." }
       }
     },
     "suspend_restriction": {
       "name": "Ophæv spærring i dag",
-      "description": "Ophæver barnets spærring for resten af i dag.",
+      "description": "Ophæver barnets spærring resten af dagen.",
       "fields": {
-        "child_id": { "name": "Barn-id", "description": "Attributten child_id på barnets \"Tablet spærret\"-sensor." },
-        "config_entry_id": { "name": "Køleskabsskærm", "description": "Kun nødvendig med flere skærme." }
+        "child_id": { "name": "Barn-id", "description": "Attributten child_id på barnets sensor \"Tablet spærret\"." }
       }
     }
   }

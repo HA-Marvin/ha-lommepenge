@@ -6,7 +6,7 @@ from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import LommepengeConfigEntry, LommepengeCoordinator
 from .entity import LommepengeChildEntity, async_setup_child_entities
@@ -15,9 +15,9 @@ from .entity import LommepengeChildEntity, async_setup_child_entities
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: LommepengeConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    coordinator = entry.runtime_data
+    coordinator = entry.runtime_data.coordinator
     async_setup_child_entities(
         coordinator,
         async_add_entities,

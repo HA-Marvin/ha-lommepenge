@@ -1,123 +1,163 @@
-"""Tests for opsætningen (config flow)."""
+"""Opsætning, indstillinger og "Tilføj enhed"."""
 
 from __future__ import annotations
 
-from ipaddress import ip_address
-from unittest.mock import patch
-
-import pytest
+import hashlib
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.lommepenge.config_flow import ZeroconfServiceInfo
-from custom_components.lommepenge.const import CONF_PIN, CONF_TOKEN, CONF_WEBHOOK_ID, DOMAIN
+from custom_components.lommepenge.const import (
+    CONF_CHILD_ID,
+    CONF_DEVICE_ID,
+    CONF_FAMILY_NAME,
+    CONF_GITHUB_REPO,
+    CONF_GITHUB_TOKEN,
+    CONF_NAME,
+    CONF_PIN,
+    CONF_PIN_HASH,
+    CONF_PIN_SALT,
+    CONF_ROLE,
+    DOMAIN,
+    ROLE_CHILD,
+    ROLE_SCREEN,
+    SUBENTRY_DEVICE,
+)
 
-from .conftest import BASE, HOST, PORT, SCREEN_ID, TOKEN
-
-PAIR_OK = {"token": TOKEN, "screenId": SCREEN_ID, "familyName": "Familien"}
+from .conftest import AppClient, add_child, setup_entry
 
 
-@pytest.fixture(autouse=True)
-def mock_setup_entry():
-    """Config-flow-tests tester kun flowet - ikke selve opsætningen."""
-    with patch(
-        "custom_components.lommepenge.async_setup_entry", return_value=True
-    ) as mock:
-        yield mock
-
-
-async def test_user_flow_pairs_with_pin(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_screen
-) -> None:
-    aioclient_mock.post(f"{BASE}/ha/pair", json=PAIR_OK)
-
+async def test_user_flow(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
-    assert result["type"] is FlowResultType.FORM
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_FAMILY_NAME: "Brandt", CONF_PIN: "12"}
+    )
+    assert result["errors"] == {CONF_PIN: "invalid_pin"}
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: HOST, CONF_PORT: PORT, CONF_PIN: "1234"}
+        result["flow_id"], {CONF_FAMILY_NAME: "Brandt", CONF_PIN: "2468"}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "Familien"
-    assert result["data"][CONF_TOKEN] == TOKEN
-    assert result["data"][CONF_WEBHOOK_ID]
-    assert result["result"].unique_id == SCREEN_ID
-    # PIN'en sendes til skærmen, men gemmes ikke i HA.
-    assert CONF_PIN not in result["data"]
-    pair_call = next(c for c in aioclient_mock.mock_calls if str(c[1]).endswith("/ha/pair"))
-    assert pair_call[2] == {"pin": "1234"}
+    data = result["data"]
+    assert result["title"] == "Brandt"
+    # Kun salt + hash gemmes - i samme form som appen tjekker PIN'en.
+    assert CONF_PIN not in data
+    assert data[CONF_PIN_HASH] == hashlib.sha256(f"{data[CONF_PIN_SALT]}:2468".encode()).hexdigest()
 
-
-async def test_user_flow_wrong_pin(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
-) -> None:
-    aioclient_mock.post(f"{BASE}/ha/pair", status=401, json={"error": "Forkert PIN-kode."})
-
+    # Kun én familie pr. HA.
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: HOST, CONF_PORT: PORT, CONF_PIN: "0000"}
-    )
-    assert result["type"] is FlowResultType.FORM
-    assert result["errors"] == {"base": "invalid_auth"}
+    assert result["type"] is FlowResultType.ABORT
 
 
-async def test_user_flow_too_many_attempts(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+async def test_options_validate_github_token(
+    hass: HomeAssistant, config_entry: MockConfigEntry, aioclient_mock: AiohttpClientMocker
 ) -> None:
-    aioclient_mock.post(f"{BASE}/ha/pair", status=429, json={"error": "Vent"})
+    await setup_entry(hass, config_entry)
+    repo = "https://api.github.com/repos/HA-Marvin/lommepenge-app"
+    aioclient_mock.get(repo, status=401)
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {CONF_GITHUB_TOKEN: "forkert", CONF_GITHUB_REPO: "HA-Marvin/lommepenge-app"},
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: HOST, CONF_PORT: PORT, CONF_PIN: "0000"}
-    )
-    assert result["errors"] == {"base": "too_many_attempts"}
+    assert result["errors"] == {CONF_GITHUB_TOKEN: "invalid_token"}
 
-
-async def test_user_flow_cannot_connect(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
-) -> None:
-    aioclient_mock.post(f"{BASE}/ha/pair", exc=TimeoutError())
-
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: HOST, CONF_PORT: PORT, CONF_PIN: "1234"}
-    )
-    assert result["errors"] == {"base": "cannot_connect"}
-
-
-async def test_zeroconf_flow(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_screen
-) -> None:
-    aioclient_mock.post(f"{BASE}/ha/pair", json=PAIR_OK)
-    info = ZeroconfServiceInfo(
-        ip_address=ip_address(HOST),
-        ip_addresses=[ip_address(HOST)],
-        hostname="skaerm.local.",
-        name="Familien._lommepenge._tcp.local.",
-        port=PORT,
-        type="_lommepenge._tcp.local.",
-        properties={},
-    )
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_ZEROCONF}, data=info
-    )
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "zeroconf_confirm"
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_PIN: "1234"}
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(repo, json={"full_name": "HA-Marvin/lommepenge-app"})
+    aioclient_mock.get(f"{repo}/releases/latest", status=404)
+    old_hash = config_entry.data[CONF_PIN_HASH]
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_GITHUB_TOKEN: "ghp_ok",
+            CONF_GITHUB_REPO: "HA-Marvin/lommepenge-app",
+            CONF_PIN: "9999",
+        },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"][CONF_HOST] == HOST
+    await hass.async_block_till_done()
+    assert config_entry.options[CONF_GITHUB_TOKEN] == "ghp_ok"
+    assert config_entry.data[CONF_PIN_HASH] != old_hash
+
+
+async def _start_device_flow(hass: HomeAssistant, entry: MockConfigEntry, name: str, role: str):
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_DEVICE), context={"source": config_entries.SOURCE_USER}
+    )
+    assert result["step_id"] == "user"
+    return await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_NAME: name, CONF_ROLE: role}
+    )
+
+
+async def test_add_screen_device(
+    hass: HomeAssistant, config_entry: MockConfigEntry, hass_client_no_auth
+) -> None:
+    await setup_entry(hass, config_entry)
+    result = await _start_device_flow(hass, config_entry, "Køleskab", ROLE_SCREEN)
+    assert result["step_id"] == "pair"
+    placeholders = result["description_placeholders"]
+    assert placeholders["install_url"].startswith("http://")
+    token = placeholders["install_url"].rsplit("/", 1)[1]
+    assert placeholders["qr_url"] == f"/api/lommepenge/qr/{token}.svg"
+
+    # Enheden scanner og forbinder, mens dialogen står åben.
+    client = await hass_client_no_auth()
+    assert (await AppClient(client).pair(token))["status"] == 200
+
+    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+
+    subentry = next(iter(config_entry.subentries.values()))
+    assert subentry.title == "Køleskab"
+    assert subentry.data[CONF_ROLE] == ROLE_SCREEN
+    device_id = subentry.data[CONF_DEVICE_ID]
+    assert config_entry.runtime_data.devices[device_id]["registered"] is True
+
+
+async def test_add_child_tablet(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
+    runtime = await setup_entry(hass, config_entry)
+    result = await _start_device_flow(hass, config_entry, "Emmas tablet", ROLE_CHILD)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "no_children"
+
+    await add_child(runtime, "emma", "Emma")
+    result = await _start_device_flow(hass, config_entry, "Emmas tablet", ROLE_CHILD)
+    assert result["step_id"] == "child"
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_CHILD_ID: "emma"}
+    )
+    assert result["step_id"] == "pair"
+    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_CHILD_ID] == "emma"
+
+
+async def test_reconfigure_gives_new_qr(
+    hass: HomeAssistant, config_entry: MockConfigEntry, hass_client_no_auth
+) -> None:
+    await setup_entry(hass, config_entry)
+    result = await _start_device_flow(hass, config_entry, "Mor", ROLE_SCREEN)
+    await hass.config_entries.subentries.async_configure(result["flow_id"], {})
+    await hass.async_block_till_done()
+    subentry_id = next(iter(config_entry.subentries))
+
+    result = await config_entry.start_subentry_reconfigure_flow(hass, subentry_id)
+    assert result["step_id"] == "reconfigure"
+    token = result["description_placeholders"]["install_url"].rsplit("/", 1)[1]
+    client = await hass_client_no_auth()
+    app = AppClient(client)
+    assert (await app.pair(token))["status"] == 200
+    assert (await app.state()).status == 200
+
+    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {})
+    assert result["reason"] == "reconfigure_successful"

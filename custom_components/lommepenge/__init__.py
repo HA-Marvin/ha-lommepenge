@@ -1,44 +1,40 @@
-"""Lommepenge: familiens opgaver og lommepenge fra køleskabsskærmen i HA.
+"""Lommepenge: familiens opgaver og lommepenge med Home Assistant som server.
 
-Integrationen taler med lommepenge-appens indbyggede server på
-køleskabsskærmen (kun LAN). Den henter overblikket jævnligt, modtager
-hændelser med det samme via en webhook, og stiller entiteter, services og
-hændelsen `lommepenge_event` til rådighed for automationer/blueprints.
+HA gemmer familiens data, regner opfølgning og spærring, og er det eneste
+sted appen (fælles skærm, forældres telefoner og børnenes tablets) taler
+med. Enheder tilføjes under integrationen med en QR-kode, og appen og dens
+opdateringer hentes også fra HA.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
 
-from aiohttp import web
 import voluptuous as vol
 
-from homeassistant.components import webhook
-from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_HOST, CONF_PORT, Platform
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.typing import ConfigType
 
-from .api import LommepengeApi, LommepengeError
 from .const import (
     ATTR_CHILD_ID,
     ATTR_COMPLETION_ID,
-    ATTR_CONFIG_ENTRY_ID,
-    CONF_TOKEN,
-    CONF_WEBHOOK_ID,
+    CONF_GITHUB_REPO,
+    CONF_GITHUB_TOKEN,
+    DEFAULT_GITHUB_REPO,
     DOMAIN,
-    EVENT_LOMMEPENGE,
     SERVICE_APPROVE,
     SERVICE_REJECT,
     SERVICE_SUSPEND_RESTRICTION,
 )
 from .coordinator import LommepengeConfigEntry, LommepengeCoordinator
 from .entity import child_device_identifier, child_device_name
+from .family import FamilyError
+from .http import async_register_views
+from .releases import ReleaseCoordinator
+from .runtime import LommepengeRuntime
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,161 +44,115 @@ PLATFORMS = [
     Platform.NUMBER,
     Platform.SENSOR,
     Platform.TIME,
+    Platform.UPDATE,
 ]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-_COMPLETION_SCHEMA = vol.Schema(
-    {
-        vol.Required(ATTR_COMPLETION_ID): cv.string,
-        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
-    }
-)
-_CHILD_SCHEMA = vol.Schema(
-    {
-        vol.Required(ATTR_CHILD_ID): cv.string,
-        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
-    }
-)
-
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Registrerer integrationens services (én gang, uanset antal skærme)."""
+    """Registrerer appens HTTP-API og integrationens services (én gang)."""
+    async_register_views(hass)
 
-    def _find_coordinator(call: ServiceCall, match) -> LommepengeCoordinator:
-        entries: list[LommepengeConfigEntry] = _loaded_entries(hass)
-        if entry_id := call.data.get(ATTR_CONFIG_ENTRY_ID):
-            entries = [e for e in entries if e.entry_id == entry_id]
-        if not entries:
-            raise ServiceValidationError("Ingen køleskabsskærm er sat op.")
-        for entry in entries:
-            if match(entry.runtime_data):
-                return entry.runtime_data
-        return entries[0].runtime_data
+    def _coordinator() -> LommepengeCoordinator:
+        runtime: LommepengeRuntime | None = hass.data.get(DOMAIN)
+        if runtime is None or runtime.coordinator is None:
+            raise ServiceValidationError("Lommepenge er ikke sat op.")
+        return runtime.coordinator
 
-    async def _run(coordinator: LommepengeCoordinator, action: str, payload: dict) -> None:
+    async def _run(action: str, payload: dict) -> None:
         try:
-            await coordinator.async_action(action, payload)
-        except LommepengeError as err:
+            await _coordinator().async_action(action, payload)
+        except FamilyError as err:
             raise HomeAssistantError(f"Lommepenge: {err}") from err
 
     async def approve(call: ServiceCall) -> None:
-        completion_id = call.data[ATTR_COMPLETION_ID]
-        coordinator = _find_coordinator(
-            call,
-            lambda c: any(p.get("completionId") == completion_id for p in c.pending),
-        )
-        await _run(coordinator, "approve_completion", {"completionId": completion_id})
+        await _run("approve_completion", {"completionId": call.data[ATTR_COMPLETION_ID]})
 
     async def reject(call: ServiceCall) -> None:
-        completion_id = call.data[ATTR_COMPLETION_ID]
-        coordinator = _find_coordinator(
-            call,
-            lambda c: any(p.get("completionId") == completion_id for p in c.pending),
-        )
-        await _run(coordinator, "reject_completion", {"completionId": completion_id})
+        await _run("reject_completion", {"completionId": call.data[ATTR_COMPLETION_ID]})
 
     async def suspend_restriction(call: ServiceCall) -> None:
-        child_id = call.data[ATTR_CHILD_ID]
-        coordinator = _find_coordinator(call, lambda c: c.child(child_id) is not None)
-        await _run(coordinator, "suspend_restriction", {"childId": child_id})
+        await _run("suspend_restriction", {"childId": call.data[ATTR_CHILD_ID]})
 
-    hass.services.async_register(DOMAIN, SERVICE_APPROVE, approve, _COMPLETION_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_REJECT, reject, _COMPLETION_SCHEMA)
+    completion_schema = vol.Schema({vol.Required(ATTR_COMPLETION_ID): cv.string})
+    child_schema = vol.Schema({vol.Required(ATTR_CHILD_ID): cv.string})
+    hass.services.async_register(DOMAIN, SERVICE_APPROVE, approve, completion_schema)
+    hass.services.async_register(DOMAIN, SERVICE_REJECT, reject, completion_schema)
     hass.services.async_register(
-        DOMAIN, SERVICE_SUSPEND_RESTRICTION, suspend_restriction, _CHILD_SCHEMA
+        DOMAIN, SERVICE_SUSPEND_RESTRICTION, suspend_restriction, child_schema
     )
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: LommepengeConfigEntry) -> bool:
-    """Sætter én køleskabsskærm op."""
-    api = LommepengeApi(
-        async_get_clientsession(hass),
-        entry.data[CONF_HOST],
-        entry.data[CONF_PORT],
-        entry.data[CONF_TOKEN],
-    )
-    coordinator = LommepengeCoordinator(hass, entry, api)
-    await coordinator.async_config_entry_first_refresh()
-    entry.runtime_data = coordinator
+    runtime = LommepengeRuntime(hass, entry)
+    await runtime.async_load()
+    runtime.async_sync_subentries()
 
-    webhook_id = entry.data[CONF_WEBHOOK_ID]
+    runtime.coordinator = LommepengeCoordinator(hass, entry, runtime)
+    await runtime.coordinator.async_config_entry_first_refresh()
 
-    @callback
-    def _unregister_webhook() -> None:
-        webhook.async_unregister(hass, webhook_id)
+    if token := entry.options.get(CONF_GITHUB_TOKEN):
+        runtime.releases = ReleaseCoordinator(
+            hass, entry, entry.options.get(CONF_GITHUB_REPO, DEFAULT_GITHUB_REPO), token
+        )
+        # En fejl her (fx ingen internet) må ikke stoppe resten.
+        await runtime.releases.async_refresh()
 
-    webhook.async_register(
-        hass,
-        DOMAIN,
-        f"Lommepenge ({entry.title})",
-        webhook_id,
-        _handle_webhook,
-        local_only=True,
-        allowed_methods=["POST"],
-    )
-    entry.async_on_unload(_unregister_webhook)
-
-    await _async_send_webhook_url(hass, entry, api, webhook_id)
-
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.runtime_data = runtime
+    hass.data[DOMAIN] = runtime
 
     @callback
     def _sync_child_devices() -> None:
         _async_sync_child_devices(hass, entry)
 
     _sync_child_devices()
-    entry.async_on_unload(coordinator.async_add_listener(_sync_child_devices))
+    entry.async_on_unload(runtime.coordinator.async_add_listener(_sync_child_devices))
+    # Ny/slettet enhed, ny GitHub-nøgle eller PIN: genindlæs.
+    entry.async_on_unload(entry.add_update_listener(_async_reload))
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
+async def _async_reload(hass: HomeAssistant, entry: LommepengeConfigEntry) -> None:
+    hass.config_entries.async_schedule_reload(entry.entry_id)
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: LommepengeConfigEntry) -> bool:
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        await entry.runtime_data.async_save_now()
+        hass.data.pop(DOMAIN, None)
+    return unloaded
 
 
-async def _async_send_webhook_url(
-    hass: HomeAssistant,
-    entry: LommepengeConfigEntry,
-    api: LommepengeApi,
-    webhook_id: str,
-) -> None:
-    """Fortæller skærmen hvor den skal sende hændelser hen.
+async def async_remove_entry(hass: HomeAssistant, entry: LommepengeConfigEntry) -> None:
+    """Integrationen slettes: familiens data og enhedsnøgler slettes også."""
+    await LommepengeRuntime(hass, entry).async_remove_storage()
 
-    Fejler det (fx ingen intern URL konfigureret), virker integrationen
-    stadig - bare kun via polling (op til et minuts forsinkelse).
-    """
-    try:
-        base = get_url(hass, allow_internal=True, allow_external=False, prefer_external=False)
-    except NoURLAvailableError:
-        _LOGGER.warning(
-            "Lommepenge: HA har ingen intern URL; hændelser hentes kun ved polling. "
-            "Sæt en intern URL under Indstillinger > System > Netværk"
+
+async def async_migrate_entry(hass: HomeAssistant, entry: LommepengeConfigEntry) -> bool:
+    if entry.version == 1:
+        _LOGGER.error(
+            "Lommepenge 0.2 bruger Home Assistant som server i stedet for "
+            "køleskabsskærmen. Slet integrationen og tilføj den igen"
         )
-        return
-    try:
-        await api.register_webhook(f"{base}{webhook.async_generate_path(webhook_id)}")
-    except LommepengeError as err:
-        _LOGGER.warning("Lommepenge: kunne ikke registrere webhook: %s", err)
+        return False
+    return True
 
 
 @callback
 def _async_sync_child_devices(hass: HomeAssistant, entry: LommepengeConfigEntry) -> None:
-    """Holder børnenes enheder i takt med appen.
-
-    Et barn der omdøbes i appen, får nyt navn i HA (medmindre brugeren selv
-    har navngivet enheden i HA), og et barn der slettes i appen, fjernes fra HA.
-    """
-    coordinator = entry.runtime_data
+    """Børnenes enheder i HA følger appen: omdøb og slet."""
+    coordinator = entry.runtime_data.coordinator
     if not coordinator.last_update_success or coordinator.data is None:
         return
-    screen = entry.unique_id or entry.entry_id
     dev_reg = dr.async_get(hass)
     current: set[tuple[str, str]] = set()
     for child in coordinator.children:
-        if "id" not in child:
-            continue
-        identifier = child_device_identifier(screen, child["id"])
+        identifier = child_device_identifier(entry.entry_id, child["id"])
         current.add(identifier)
         device = dev_reg.async_get_device(identifiers={identifier})
         name = child_device_name(child)
@@ -210,8 +160,9 @@ def _async_sync_child_devices(hass: HomeAssistant, entry: LommepengeConfigEntry)
             dev_reg.async_update_device(device.id, name=name)
 
     for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
-        if (DOMAIN, screen) in device.identifiers:
-            continue
+        identifier = next(iter(device.identifiers), None)
+        if identifier is None or not identifier[1].startswith(f"{entry.entry_id}_"):
+            continue  # familien selv eller en af appens enheder
         if not device.identifiers & current:
             dev_reg.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
 
@@ -219,43 +170,10 @@ def _async_sync_child_devices(hass: HomeAssistant, entry: LommepengeConfigEntry)
 async def async_remove_config_entry_device(
     hass: HomeAssistant, entry: LommepengeConfigEntry, device: dr.DeviceEntry
 ) -> bool:
-    """Tillad at slette et barns enhed i HA, når barnet ikke findes i appen."""
-    screen = entry.unique_id or entry.entry_id
-    if (DOMAIN, screen) in device.identifiers:
+    """Et barns enhed kan slettes i HA, når barnet ikke findes i appen."""
+    if not any(i[1].startswith(f"{entry.entry_id}_") for i in device.identifiers):
         return False
     return not any(
-        child_device_identifier(screen, child["id"]) in device.identifiers
-        for child in entry.runtime_data.children
-        if "id" in child
+        child_device_identifier(entry.entry_id, child["id"]) in device.identifiers
+        for child in entry.runtime_data.coordinator.children
     )
-
-
-def _loaded_entries(hass: HomeAssistant) -> list[LommepengeConfigEntry]:
-    return [
-        entry
-        for entry in hass.config_entries.async_entries(DOMAIN)
-        if entry.state is ConfigEntryState.LOADED
-    ]
-
-
-async def _handle_webhook(
-    hass: HomeAssistant, webhook_id: str, request: web.Request
-) -> web.Response:
-    """Hændelse fra køleskabsskærmen: genudsend på event-bussen og opdatér."""
-    try:
-        data: dict[str, Any] = await request.json()
-    except ValueError:
-        return web.Response(status=400)
-    if not isinstance(data, dict) or "event" not in data:
-        return web.Response(status=400)
-
-    entry = next(
-        (e for e in _loaded_entries(hass) if e.data.get(CONF_WEBHOOK_ID) == webhook_id),
-        None,
-    )
-    if entry is None:
-        return web.Response(status=404)
-
-    hass.bus.async_fire(EVENT_LOMMEPENGE, {**data, "config_entry_id": entry.entry_id})
-    await entry.runtime_data.async_request_refresh()
-    return web.Response(status=200)

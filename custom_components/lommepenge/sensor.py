@@ -1,23 +1,34 @@
-"""Sensorer: saldo pr. barn og opgaver der venter på godkendelse."""
+"""Sensorer: saldo pr. barn, godkendelser der venter, og enhedernes kontakt."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.config_entries import ConfigSubentry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .coordinator import LommepengeConfigEntry, LommepengeCoordinator
-from .entity import LommepengeChildEntity, LommepengeEntity, async_setup_child_entities
+from .entity import (
+    LommepengeAppDeviceEntity,
+    LommepengeChildEntity,
+    LommepengeEntity,
+    async_setup_app_device_entities,
+    async_setup_child_entities,
+)
+from .runtime import LommepengeRuntime
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: LommepengeConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    coordinator = entry.runtime_data
+    coordinator = entry.runtime_data.coordinator
     async_add_entities([PendingApprovalsSensor(coordinator)])
     async_setup_child_entities(
         coordinator,
@@ -26,6 +37,9 @@ async def async_setup_entry(
             KronerSensor(coordinator, child_id, "balance", "balanceOre"),
             KronerSensor(coordinator, child_id, "earned_this_week", "earnedThisWeekOre"),
         ],
+    )
+    async_setup_app_device_entities(
+        entry, async_add_entities, lambda subentry: [LastSeenSensor(entry.runtime_data, subentry)]
     )
 
 
@@ -83,3 +97,18 @@ class KronerSensor(LommepengeChildEntity, SensorEntity):
         if child is None or child.get(self._field) is None:
             return None
         return child[self._field] / 100
+
+
+class LastSeenSensor(LommepengeAppDeviceEntity, SensorEntity):
+    """Hvornår enheden sidst hentede data fra HA (tom = ikke parret endnu)."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, runtime: LommepengeRuntime, subentry: ConfigSubentry) -> None:
+        super().__init__(runtime, subentry, "last_seen")
+
+    @property
+    def native_value(self) -> datetime | None:
+        device = self.device
+        return dt_util.parse_datetime(device["lastSeen"]) if device else None

@@ -1,11 +1,39 @@
 # Lommepenge – Home Assistant-integration
 
-Forbinder Home Assistant med lommepenge-appens køleskabsskærm over det
-lokale netværk. Ingen cloud.
+Home Assistant som server for familiens lommepenge-app: HA gemmer opgaver,
+udførelser og saldi, følger op på frister, og er det eneste sted appen på
+den fælles skærm, forældrenes telefoner og børnenes tablets taler med.
+Kun hjemmenettet – ingen cloud.
+
+## Installation
+
+1. HACS/Marketplace → ⋮ → *Brugerdefinerede repositories* → tilføj
+   `https://github.com/HA-Marvin/ha-lommepenge` som type *Integration*.
+2. Installér *Lommepenge* og genstart Home Assistant.
+3. *Indstillinger → Enheder og tjenester → Tilføj integration →
+   Lommepenge*: familiens navn og forælder-PIN (4–8 cifre).
+4. *Konfigurér*: en GitHub-nøgle med læseadgang til app-repoet. Så henter
+   HA appens versioner og giver dem videre til enhederne.
+
+Opgraderer du fra 0.1 (hvor køleskabsskærmen var server): slet den gamle
+integration først og tilføj den igen.
+
+## Enheder
+
+*Lommepenge → Tilføj enhed*: vælg navn og rolle – **fælles skærm**,
+**forælders telefon** eller **barnets tablet** (og hvilket barn). HA viser
+en QR-kode, som enheden scanner med kameraet. Siden der åbner, har to
+knapper: **Hent appen** og **Åbn appen og forbind**. Linket virker én gang
+i 15 minutter.
+
+Hver enhed får sin egen nøgle og signerer alle kald. En barne-tablet ser
+kun sit eget barn og kan kun markere dets opgaver udført – det håndhæves
+af HA. Slettes enheden i HA, mister den adgangen med det samme.
+*Omkonfigurér* på en enhed giver en ny QR-kode (fx efter geninstallation).
 
 ## Hvad du får
 
-**Pr. barn** (én HA-enhed pr. barn):
+**Pr. barn** (én HA-enhed pr. barn, følger appens navne):
 
 | Entitet | Beskrivelse |
 | --- | --- |
@@ -15,34 +43,20 @@ lokale netværk. Ingen cloud.
 | `binary_sensor.lommepenge_<barn>_forsinket_opgave` | Til = en obligatorisk opgave er over fristen |
 | `button.lommepenge_<barn>_ophaev_spaerring_i_dag` | Ophæver spærringen resten af dagen |
 
-**For familien** (køleskabsskærmen):
+**For familien:** `sensor.<familie>_venter_pa_godkendelse` (attribut
+`pending`), tiderne `time.<familie>_standardfrist`, `..._spaerretid_fra`,
+`..._spaerretid_til` og grænserne `number.<familie>_pausetid_...`,
+`..._advarsel_for_frist`, `..._vinter_fra_uge`, `..._vinter_til_uge`.
 
-| Entitet | Beskrivelse |
-| --- | --- |
-| `sensor.<familie>_venter_pa_godkendelse` | Antal opgaver der venter. Attribut `pending` med detaljer |
-| `time.<familie>_standardfrist`, `..._spaerretid_fra`, `..._spaerretid_til` | Familiens tider – kan rettes her eller i appen |
-| `number.<familie>_pausetid_...`, `..._advarsel_for_frist`, `..._vinter_fra_uge`, `..._vinter_til_uge` | Familiens grænser |
+**Pr. enhed:** `update.<enhed>_app` (installeret og nyeste app-version) og
+`sensor.<enhed>_sidste_kontakt`.
 
-(De præcise entitets-id'er afhænger af navnene i appen.)
+**Services:** `lommepenge.approve`, `lommepenge.reject`,
+`lommepenge.suspend_restriction`.
 
-**Services:** `lommepenge.approve`, `lommepenge.reject`, `lommepenge.suspend_restriction`.
-
-**Hændelse:** `lommepenge_event` med `event` =
-`completion_pending`, `completion_approved`, `completion_rejected` eller
-`restriction_changed`, plus detaljer (barn, opgave, beløb, `completionId` …).
-
-## Installation
-
-1. HACS → ⋮ → *Brugerdefinerede repositories* → tilføj
-   `https://github.com/HA-Marvin/ha-lommepenge` som type *Integration*.
-2. Søg efter *Lommepenge* i HACS, installér, og genstart Home Assistant.
-3. Køleskabsskærmen dukker op under *Indstillinger → Enheder og tjenester*
-   som fundet enhed (ellers: *Tilføj integration → Lommepenge* og indtast
-   IP-adressen). Bekræft med familiens forælder-PIN.
-
-HA skal have en **intern URL** (*Indstillinger → System → Netværk*), så
-skærmen kan sende hændelser med det samme. Uden den virker alt stadig, men
-med op til et minuts forsinkelse.
+**Hændelse:** `lommepenge_event` med `event` = `completion_pending`,
+`completion_approved`, `completion_rejected` eller `restriction_changed`,
+plus detaljer (barn, opgave, beløb, `completionId`, `late` …).
 
 ## Blueprints
 
@@ -57,19 +71,19 @@ HACS installerer ikke blueprints. Importér dem med knapperne herunder (eller
   udført. Notifikationen forsvinder hos alle, når opgaven er afgjort.
 - **Spær tablet ved forsinket opgave** – én automation pr. barn. Tænder en
   kontakt (fx en UniFi-trafikregel, der blokerer YouTube/spil for barnets
-  tablet) mens barnet er spærret. Er skærmen utilgængelig i 10 minutter,
-  slukkes kontakten (fail-open). Valgfri besked til forældrene med knappen
-  "Ophæv spærring i dag".
+  tablet), mens barnet er spærret. Valgfri besked til forældrene med
+  knappen "Ophæv spærring i dag".
 
 ## Sikkerhed
 
-- Kun LAN. Webhooken er `local_only`.
-- HA får sin egen nøgle ved parring med forælder-PIN. Skærmen låser i et
-  minut efter 5 forkerte PIN-forsøg.
-- HA kan kun godkende/afvise, ophæve spærring og ændre familiens tider –
-  ikke oprette/slette opgaver eller ændre saldo.
-- Nøglen kan tilbagekaldes i appen (*Forælder-tilstand → Indstillinger →
-  Afbryd forbindelsen*); HA beder så om PIN igen.
+- Appens API (`/api/lommepenge/…`) svarer kun på hjemmenettet – aldrig via
+  HA's eksterne adresse eller Nabu Casa.
+- Appen bruger ikke HA's brugere eller tokens. Hver enhed har sin egen
+  nøgle; kald signeres med HMAC-SHA256 over tidspunkt, metode, sti og
+  krop, og må højst være 5 minutter gamle.
+- HA's ur bestemmer, hvornår en opgave er udført (og dermed "for sent").
+- Familiens data og enhedsnøgler ligger i `.storage/lommepenge.<id>` og
+  kommer med i HA's backups. GitHub-nøglen bruges kun af HA.
 
 ## Udvikling
 
