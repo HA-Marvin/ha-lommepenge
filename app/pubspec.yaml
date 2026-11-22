@@ -1,7 +1,7 @@
 name: lommepenge_app
 description: "Lommepenge-app til familien - opgaver og godkendelse med Home Assistant som server."
 publish_to: 'none'
-version: 0.3.1+301
+version: 0.3.2+302
 
 environment:
   sdk: '>=3.5.0 <4.0.0'

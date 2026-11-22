@@ -41,6 +41,20 @@ class NativeBridge {
     );
   }
 
+  /// Home Assistant-instanser på hjemmenettet (mDNS), fx til at udfylde
+  /// adressen på forbind-skærmen. Tom liste hvis ingen findes.
+  Future<List<({String name, String url})>> discoverHa() async {
+    final found = await _call<List>('discoverHa') ?? const [];
+    return [
+      for (final item in found.whereType<Map>())
+        if (item['url'] is String)
+          (
+            name: (item['name'] as String?) ?? 'Home Assistant',
+            url: item['url'] as String,
+          ),
+    ];
+  }
+
   /// Om Android tillader appen at installere opdateringer.
   Future<bool> canInstall() async => await _call<bool>('canInstall') ?? false;
 

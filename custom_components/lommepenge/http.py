@@ -4,7 +4,8 @@ Appen bruger ikke HA's egne brugere/tokens. Hver enhed har sin egen nøgle
 (fra parringen) og signerer alle forespørgsler, så en barne-tablet aldrig
 får adgang til resten af Home Assistant.
 
-    GET  /api/lommepenge/install/{token}        installationsside (QR-koden)
+    GET  /api/lommepenge                        startside: appen og vejledning
+    GET  /api/lommepenge/install/{token}        tilføj-enhed-side (kode, QR, app)
     GET  /api/lommepenge/qr/{token}.svg         QR-koden til "Tilføj enhed"
     GET  /api/lommepenge/download/{token}/...   APK til første installation
     GET  /api/lommepenge/app.apk                APK uden kode (enheder uden kamera)
@@ -31,7 +32,7 @@ import segno
 from homeassistant.components.http import KEY_HASS, HomeAssistantView
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.network import NoURLAvailableError, get_url, is_cloud_connection
-from homeassistant.util import network as network_util
+from homeassistant.util import dt as dt_util, network as network_util
 
 from .const import API_PREFIX, DOMAIN, ROLE_CHILD, ROLE_PARENT, ROLE_SCREEN
 from .family import FamilyError
@@ -42,6 +43,7 @@ from .runtime import (
     LommepengeRuntime,
     PairingError,
     TooManyPairingAttempts,
+    pairing_code,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +60,7 @@ ROLE_LABELS = {
 
 def async_register_views(hass: HomeAssistant) -> None:
     for view in (
+        HomePageView,
         InstallPageView,
         QrCodeView,
         DownloadView,
@@ -86,6 +89,11 @@ def base_url(hass: HomeAssistant) -> str:
 def install_url(hass: HomeAssistant, token: str) -> str:
     """Link i QR-koden (og til at taste i en browser)."""
     return f"{base_url(hass)}{API_PREFIX}/install/{token}"
+
+
+def home_url(hass: HomeAssistant) -> str:
+    """Fast side med appen og vejledningen ("Besøg" på Lommepenge i HA)."""
+    return f"{base_url(hass)}{API_PREFIX}"
 
 
 def app_url(hass: HomeAssistant) -> str:
@@ -144,47 +152,109 @@ class _SignedView(_LocalView):
 # ---- Installation og parring -------------------------------------------------
 
 
+def _release_version(runtime: LommepengeRuntime) -> str | None:
+    release = runtime.releases.data if runtime.releases is not None else None
+    return release.version if release is not None else None
+
+
+def _download_button(runtime: LommepengeRuntime) -> str:
+    version = _release_version(runtime)
+    if version is None:
+        return (
+            '<p class="hint">Home Assistant har ikke kunnet hente appen fra GitHub '
+            "endnu. Prøv igen om lidt.</p>"
+        )
+    return (
+        f'<a class="button" href="{API_PREFIX}/app.apk" download="lommepenge-{escape(version)}.apk">'
+        f"Hent appen (.apk, version {escape(version)})</a>"
+        '<p class="hint">Har enheden ingen browser, så hent filen her på computeren og '
+        "flyt den over, fx med et USB-kabel. Android spørger én gang, om appen må "
+        "installeres.</p>"
+    )
+
+
+class HomePageView(_LocalView):
+    """Fast side med appen og vejledningen - "Besøg" på Lommepenge i HA."""
+
+    url = API_PREFIX
+    name = "api:lommepenge:home"
+
+    async def get(self, request: web.Request) -> web.Response:
+        _require_local(request)
+        runtime = _runtime(request)
+        body = (
+            f"<p>{escape(runtime.family_name)}</p>"
+            f"{_download_button(runtime)}"
+            "<h2>Tilføj en enhed</h2>"
+            "<ol>"
+            "<li>Installér appen på enheden.</li>"
+            "<li>I Home Assistant: <b>Indstillinger → Enheder og tjenester → Lommepenge "
+            "→ Tilføj enhed</b>. Vælg navn og rolle.</li>"
+            "<li>Åbn appen på enheden, og tast koden, som Home Assistant viser - eller "
+            "scan QR-koden, hvis enheden har kamera.</li>"
+            "</ol>"
+        )
+        return _page("Lommepenge", body)
+
+
 class InstallPageView(_LocalView):
+    """Siden bag "Tilføj enhed": kode, QR-kode og appen. Kan åbnes både på
+    den nye enhed (via QR-koden) og på computeren (via linket i HA)."""
+
     url = f"{API_PREFIX}/install/{{token}}"
     name = "api:lommepenge:install"
 
     async def get(self, request: web.Request, token: str) -> web.Response:
         _require_local(request)
         runtime = _runtime(request)
+        hass = request.app[KEY_HASS]
         pairing = runtime.pairing(token)
         if pairing is None or pairing.get("used"):
             return _page(
-                "Linket er udløbet",
-                "<p>Lav en ny QR-kode i Home Assistant under "
-                "<b>Lommepenge → Tilføj enhed</b>.</p>",
+                "Koden er brugt eller udløbet",
+                "<p>Lav en ny i Home Assistant: <b>Lommepenge → Tilføj enhed</b> - eller "
+                "<b>Omkonfigurér</b> på en enhed, der allerede findes.</p>"
+                f"{_download_button(runtime)}",
             )
-        origin = f"{request.scheme}://{request.host}"
-        pair_link = (
-            f"intent://pair?url={quote(origin, safe='')}&token={quote(token, safe='')}"
-            f"#Intent;scheme=lommepenge;package={APP_PACKAGE};end"
+        code = pairing_code(token)
+        expires = dt_util.as_local(dt_util.parse_datetime(pairing["expires"])).strftime("%H:%M")
+        qr = io.BytesIO()
+        segno.make(install_url(hass, code), error="m").save(
+            qr, kind="svg", scale=6, border=2, dark="#000", light="#fff", xmldecl=False
         )
-        release = runtime.releases.data if runtime.releases is not None else None
-        if release is not None:
-            download = (
-                f'<a class="button" href="{API_PREFIX}/download/{token}/'
-                f'lommepenge-{escape(release.version)}.apk">1. Hent appen</a>'
-                f"<p class=\"hint\">Version {escape(release.version)}. Android spørger én gang, "
-                "om browseren må installere apps - sig ja.</p>"
+        android = "android" in request.headers.get("User-Agent", "").lower()
+        open_app = ""
+        if android:
+            origin = f"{request.scheme}://{request.host}"
+            pair_link = (
+                f"intent://pair?url={quote(origin, safe='')}&token={quote(code, safe='')}"
+                f"#Intent;scheme=lommepenge;package={APP_PACKAGE};end"
             )
-        else:
-            download = (
-                "<p class=\"hint\">Home Assistant har ikke kunnet hente appen fra GitHub "
-                "endnu. Har enheden allerede appen, kan du springe trin 1 over.</p>"
+            open_app = (
+                f'<a class="button secondary" href="{escape(pair_link)}">'
+                "Åbn appen og forbind</a>"
+                '<p class="hint">Når appen er installeret på denne enhed.</p>'
             )
         body = (
-            f"<p>{escape(runtime.family_name)} · {escape(ROLE_LABELS.get(pairing['role'], ''))}"
-            f": <b>{escape(pairing['name'])}</b></p>"
-            f"{download}"
-            f'<a class="button" href="{escape(pair_link)}">2. Åbn appen og forbind</a>'
-            "<p class=\"hint\">Har du lige installeret appen, så kom tilbage hertil og tryk "
-            "på knap 2.</p>"
+            f"<p>{escape(runtime.family_name)} · "
+            f"{escape(ROLE_LABELS.get(pairing['role'], ''))}</p>"
+            '<p class="label">Kode</p>'
+            f'<p class="code">{escape(code)}</p>'
+            f'<p class="hint">Gælder én gang, indtil kl. {escape(expires)}. '
+            f"Home Assistant: {escape(base_url(hass))}</p>"
+            f"{open_app}"
+            "<h2>Sådan gør du</h2>"
+            "<ol>"
+            "<li>Installér appen på enheden (knappen herunder).</li>"
+            "<li>Åbn appen, vælg <b>Forbind med kode</b>, og tast koden. Appen finder "
+            "selv Home Assistant.</li>"
+            "<li>Har enheden kamera, kan den i stedet scanne QR-koden.</li>"
+            "<li>Tryk <b>Send</b> i Home Assistant, når enheden er forbundet.</li>"
+            "</ol>"
+            f'<div class="qr">{qr.getvalue().decode()}</div>'
+            f"{_download_button(runtime)}"
         )
-        return _page("Lommepenge", body)
+        return _page(f"Tilføj {pairing['name']}", body)
 
 
 def _page(title: str, body: str) -> web.Response:
@@ -193,15 +263,23 @@ def _page(title: str, body: str) -> web.Response:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{escape(title)}</title>
 <style>
-body {{ font-family: system-ui, sans-serif; margin: 0 auto; max-width: 28rem; padding: 1.5rem 1rem;
-       background: #f4f7f6; color: #1b2b28; }}
-h1 {{ font-size: 1.5rem; color: #00695c; }}
+body {{ font-family: system-ui, sans-serif; margin: 0 auto; max-width: 34rem; padding: 1.5rem 1rem;
+       background: #f4f7f6; color: #1b2b28; line-height: 1.45; }}
+h1 {{ font-size: 1.6rem; color: #00695c; margin-bottom: .25rem; }}
+h2 {{ font-size: 1.15rem; margin-top: 1.75rem; }}
 .button {{ display: block; margin: 1.25rem 0 .5rem; padding: 1rem; border-radius: .75rem;
            background: #00796b; color: #fff; text-align: center; text-decoration: none;
            font-size: 1.15rem; font-weight: 600; }}
+.button.secondary {{ background: #455a64; }}
+.label {{ margin: 1.25rem 0 0; color: #4a5d59; text-transform: uppercase; font-size: .8rem;
+          letter-spacing: .08em; }}
+.code {{ margin: .25rem 0; font: 700 2.6rem/1.1 ui-monospace, monospace; letter-spacing: .18em; }}
 .hint {{ color: #4a5d59; font-size: .95rem; }}
+.qr svg {{ display: block; width: 14rem; height: auto; margin: 1rem 0; background: #fff;
+           border-radius: .5rem; }}
 @media (prefers-color-scheme: dark) {{
-  body {{ background: #101a18; color: #e3ece9; }} h1 {{ color: #4db6ac; }} .hint {{ color: #a3b5b1; }}
+  body {{ background: #101a18; color: #e3ece9; }} h1 {{ color: #4db6ac; }}
+  .hint, .label {{ color: #a3b5b1; }}
 }}
 </style></head>
 <body><h1>{escape(title)}</h1>{body}</body></html>"""

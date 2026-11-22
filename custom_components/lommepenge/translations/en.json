@@ -62,12 +62,12 @@
           }
         },
         "pair": {
-          "title": "Scan with {name}",
-          "description": "**With a camera:** scan the QR code, install the app, and tap \"Open the app and connect\".\n\n![QR code]({qr_url})\n\n**Without a camera:** open {apk_url} in the device's browser and install the app. Then choose \"Connect with code\" in the app and enter\n\n- Home Assistant: `{base_url}`\n- Code: **{code}**\n\nThe code works once, until {expires}. Press Submit when you are done."
+          "title": "Add {name}",
+          "description": "Code: **{code}** (works once, until {expires})\n\nInstall the app on the device, open it, choose Connect with code and enter the code. The app finds Home Assistant by itself.\n\n[Open the page with the app download and QR code]({install_url})\n\nPress Submit when the device is connected."
         },
         "reconfigure": {
-          "title": "New QR code for {name}",
-          "description": "Use this after reinstalling the app on the device. The old connection stops working once the device connects again.\n\n![QR code]({qr_url})\n\nWithout a camera: \"Connect with code\" in the app with Home Assistant `{base_url}` and code **{code}** (valid until {expires})."
+          "title": "New code for {name}",
+          "description": "Code: **{code}** (works once, until {expires})\n\nUse it after reinstalling the app: Connect with code in the app. The old connection stops when the device connects again.\n\n[Open the page with the app download and QR code]({install_url})"
         }
       },
       "error": {

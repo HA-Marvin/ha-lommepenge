@@ -21,6 +21,7 @@ import kotlin.concurrent.thread
  * Appens lille bro til Android (kanal "lommepenge/native"):
  *
  * - links fra Home Assistants installationsside (`lommepenge://pair?...`)
+ * - søgning efter Home Assistant på hjemmenettet (se [HaDiscovery])
  * - appens egen version, så den kan sammenlignes med HA's nyeste
  * - installation af en opdatering hentet fra HA (PackageInstaller - på
  *   Android 12+ uden ekstra tryk, når appen selv installerede sidste version)
@@ -65,6 +66,7 @@ class MainActivity : FlutterActivity() {
                             }
                         }
                     }
+                    "discoverHa" -> HaDiscovery(this@MainActivity) { result.success(it) }.start()
                     "notify" -> {
                         notifyUpdate(call.argument<String>("title")!!, call.argument<String>("text")!!)
                         result.success(null)

@@ -55,6 +55,11 @@ def normalize_code(code: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", code.upper())
 
 
+def pairing_code(token: str) -> str:
+    """Koden som den vises og tastes."""
+    return normalize_code(token)
+
+
 class AuthError(Exception):
     """Enheden er ukendt, tilbagekaldt, eller signaturen passer ikke."""
 

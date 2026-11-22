@@ -658,6 +658,9 @@ class AppState extends ChangeNotifier {
     return _connect(link);
   }
 
+  /// Home Assistant på hjemmenettet, til at udfylde adressen.
+  Future<List<({String name, String url})>> discoverHa() => _native.discoverHa();
+
   Future<String?> _connect(ConnectLink link) async {
     if (isChildTablet && isConnected) {
       // En barne-tablet kan ikke skiftes til en anden rolle ved at scanne en

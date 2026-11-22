@@ -33,7 +33,6 @@ from homeassistant.helpers.selector import (
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    API_PREFIX,
     CONF_CHILD_ID,
     CONF_DEVICE_ID,
     CONF_FAMILY_NAME,
@@ -50,7 +49,7 @@ from .const import (
     ROLES,
     SUBENTRY_DEVICE,
 )
-from .http import app_url, base_url, install_url
+from .http import install_url
 from .releases import GitHubAuthError, GitHubError, GitHubReleases
 
 PIN_PATTERN = re.compile(r"^\d{4,8}$")
@@ -273,11 +272,8 @@ class DeviceSubentryFlow(ConfigSubentryFlow):
             data_schema=vol.Schema({}),
             description_placeholders={
                 "name": self._name,
-                "qr_url": f"{API_PREFIX}/qr/{self._token}.svg",
-                "install_url": install_url(self.hass, self._token),
                 "code": self._token,
-                "base_url": base_url(self.hass),
-                "apk_url": app_url(self.hass),
                 "expires": self._expires,
+                "install_url": install_url(self.hass, self._token),
             },
         )

@@ -7,9 +7,10 @@ import 'qr_scan_screen.dart';
 /// Første skærm på en ny enhed: forbind til Home Assistant.
 ///
 /// Enheden tilføjes i Home Assistant (Lommepenge → Tilføj enhed), hvor
-/// rollen vælges. Derefter enten scannes QR-koden her, trykkes "Åbn appen og
-/// forbind" på installationssiden, eller - på en enhed uden kamera - tastes
-/// HA's adresse og koden (se `AppState.connectWithLink`/`connectWithCode`).
+/// rollen vælges, og HA viser en kode. Appen finder selv Home Assistant på
+/// netværket, så man normalt kun skal taste koden. Har enheden kamera, kan
+/// QR-koden scannes i stedet (se `AppState.connectWithCode`/
+/// `connectWithLink`).
 class ConnectScreen extends StatefulWidget {
   const ConnectScreen({super.key});
 
@@ -21,12 +22,35 @@ class _ConnectScreenState extends State<ConnectScreen> {
   final _addressController = TextEditingController();
   final _codeController = TextEditingController();
   bool _busy = false;
+  bool _searching = true;
+  String? _foundName;
+
+  @override
+  void initState() {
+    super.initState();
+    _discover();
+  }
 
   @override
   void dispose() {
     _addressController.dispose();
     _codeController.dispose();
     super.dispose();
+  }
+
+  Future<void> _discover() async {
+    setState(() => _searching = true);
+    final found = await context.read<AppState>().discoverHa();
+    if (!mounted) return;
+    setState(() {
+      _searching = false;
+      if (found.isNotEmpty) {
+        _foundName = found.first.name;
+        if (_addressController.text.isEmpty) {
+          _addressController.text = found.first.url;
+        }
+      }
+    });
   }
 
   Future<void> _run(Future<String?> Function(AppState) connect) async {
@@ -68,11 +92,9 @@ class _ConnectScreenState extends State<ConnectScreen> {
               ),
               const SizedBox(height: 16),
               const Text(
-                'Familiens opgaver og lommepenge ligger i Home Assistant. '
-                'Tilføj enheden dér under Lommepenge → Tilføj enhed, og vælg '
-                'om den er den fælles skærm, en forælders telefon eller et '
-                'barns tablet. Scan derefter QR-koden, eller tast koden '
-                'herunder.',
+                'Tilføj enheden i Home Assistant: Indstillinger → Enheder og '
+                'tjenester → Lommepenge → Tilføj enhed. Vælg navn og rolle, og '
+                'tast den kode, Home Assistant viser.',
                 textAlign: TextAlign.center,
               ),
               if (appState.connectionMessage != null) ...[
@@ -89,54 +111,70 @@ class _ConnectScreenState extends State<ConnectScreen> {
                 ),
               ],
               const SizedBox(height: 24),
+              TextField(
+                controller: _codeController,
+                decoration: const InputDecoration(
+                  labelText: 'Kode fra Home Assistant',
+                  hintText: 'fx K7M2QDXA',
+                  border: OutlineInputBorder(),
+                ),
+                style: theme.textTheme.headlineSmall?.copyWith(letterSpacing: 4),
+                textCapitalization: TextCapitalization.characters,
+                autocorrect: false,
+                onSubmitted: (_) => _connectWithCode(),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _addressController,
+                decoration: InputDecoration(
+                  labelText: 'Home Assistant-adresse',
+                  hintText: 'fx 192.168.1.10:8123',
+                  border: const OutlineInputBorder(),
+                  helperText: _searching
+                      ? 'Leder efter Home Assistant på netværket...'
+                      : _foundName != null
+                          ? 'Fundet: $_foundName'
+                          : 'Ikke fundet automatisk - skriv adressen. Den står '
+                              'på siden "Åbn siden med app-download" i Home '
+                              'Assistant.',
+                  helperMaxLines: 3,
+                  suffixIcon: _searching
+                      ? const Padding(
+                          padding: EdgeInsets.all(14),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : IconButton(
+                          icon: const Icon(Icons.refresh),
+                          tooltip: 'Søg igen',
+                          onPressed: _discover,
+                        ),
+                ),
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+              ),
+              const SizedBox(height: 20),
               if (_busy)
                 const Center(child: CircularProgressIndicator())
               else ...[
-                FilledButton.icon(
-                  icon: const Icon(Icons.qr_code_scanner),
-                  label: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('Scan QR-kode'),
-                  ),
-                  onPressed: _scan,
-                ),
-                const SizedBox(height: 32),
-                Text('Forbind med kode', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 4),
-                const Text(
-                  'Til enheder uden kamera. Adressen og koden står i Home '
-                  'Assistant under "Tilføj enhed".',
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _addressController,
-                  decoration: const InputDecoration(
-                    labelText: 'Home Assistant-adresse',
-                    hintText: 'fx 192.168.1.10:8123',
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.url,
-                  autocorrect: false,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _codeController,
-                  decoration: const InputDecoration(
-                    labelText: 'Kode',
-                    hintText: 'fx K7M2QDXA',
-                    border: OutlineInputBorder(),
-                  ),
-                  textCapitalization: TextCapitalization.characters,
-                  autocorrect: false,
-                  onSubmitted: (_) => _connectWithCode(),
-                ),
-                const SizedBox(height: 12),
-                FilledButton.tonal(
+                FilledButton(
                   onPressed: _connectWithCode,
                   child: const Padding(
                     padding: EdgeInsets.symmetric(vertical: 12),
                     child: Text('Forbind'),
                   ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text('Scan QR-kode i stedet'),
+                  ),
+                  onPressed: _scan,
                 ),
               ],
             ],

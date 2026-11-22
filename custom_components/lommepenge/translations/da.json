@@ -62,12 +62,12 @@
           }
         },
         "pair": {
-          "title": "Scan med {name}",
-          "description": "**Med kamera:** scan QR-koden, installér appen, og tryk på \"Åbn appen og forbind\".\n\n![QR-kode]({qr_url})\n\n**Uden kamera:** åbn {apk_url} i enhedens browser, og installér appen. Vælg derefter \"Forbind med kode\" i appen, og indtast\n\n- Home Assistant: `{base_url}`\n- Kode: **{code}**\n\nKoden virker én gang, indtil kl. {expires}. Tryk Send, når du er færdig."
+          "title": "Tilføj {name}",
+          "description": "Kode: **{code}** (virker én gang, indtil kl. {expires})\n\nInstallér appen på enheden, åbn den, vælg Forbind med kode, og tast koden. Appen finder selv Home Assistant.\n\n[Åbn siden med app-download og QR-kode]({install_url})\n\nTryk Send, når enheden er forbundet."
         },
         "reconfigure": {
-          "title": "Ny QR-kode til {name}",
-          "description": "Bruges efter en geninstallation af appen på enheden. Den gamle forbindelse holder op med at virke, når enheden forbinder igen.\n\n![QR-kode]({qr_url})\n\nUden kamera: \"Forbind med kode\" i appen med Home Assistant `{base_url}` og koden **{code}** (gælder til kl. {expires})."
+          "title": "Ny kode til {name}",
+          "description": "Kode: **{code}** (virker én gang, indtil kl. {expires})\n\nBruges efter en geninstallation af appen: Forbind med kode i appen. Den gamle forbindelse stopper, når enheden forbinder igen.\n\n[Åbn siden med app-download og QR-kode]({install_url})"
         }
       },
       "error": {

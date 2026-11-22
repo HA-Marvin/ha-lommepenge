@@ -30,22 +30,25 @@ integration først og tilføj den igen.
 
 ## Enheder
 
-*Lommepenge → Tilføj enhed*: vælg navn og rolle – **fælles skærm**,
-**forælders telefon** eller **barnets tablet** (og hvilket barn). HA viser
-en QR-kode, som enheden scanner med kameraet. Siden der åbner, har to
-knapper: **Hent appen** og **Åbn appen og forbind**. Linket virker én gang
-i 15 minutter.
+**Appen:** *Indstillinger → Enheder og tjenester → Lommepenge →* familiens
+enhed *→ Besøg* åbner en side med **Hent appen (.apk)** og vejledningen.
+Har enheden ingen browser, så hent filen på computeren og flyt den over,
+fx med USB.
+
+**Tilføj en enhed:** *Lommepenge → Tilføj enhed*. Vælg navn og rolle –
+**fælles skærm**, **forælders telefon** eller **barnets tablet** (og hvilket
+barn). HA viser en kode på 8 tegn og et link til en side med QR-kode og
+app-download.
+
+På enheden: åbn appen, tast koden, og tryk *Forbind*. Appen finder selv
+Home Assistant på netværket. Har enheden kamera, kan QR-koden scannes i
+stedet. Koden virker én gang i 15 minutter. Efter 10 forkerte koder afviser
+HA parring i 5 minutter.
 
 Hver enhed får sin egen nøgle og signerer alle kald. En barne-tablet ser
 kun sit eget barn og kan kun markere dets opgaver udført – det håndhæves
 af HA. Slettes enheden i HA, mister den adgangen med det samme.
-*Omkonfigurér* på en enhed giver en ny QR-kode (fx efter geninstallation).
-
-**Enhed uden kamera** (fx en skærm på køleskabet): åbn
-`http://<HA>:8123/api/lommepenge/app.apk` i enhedens browser og installér
-appen. Vælg derefter *Forbind med kode* i appen og tast HA's adresse og
-koden på 8 tegn, som står under QR-koden i "Tilføj enhed". Efter 10
-forkerte koder afviser HA parring i 5 minutter.
+*Omkonfigurér* på en enhed giver en ny kode (fx efter geninstallation).
 
 ## Hvad du får
 

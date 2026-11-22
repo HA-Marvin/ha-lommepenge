@@ -18,6 +18,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_DEVICE_ID, CONF_ROLE, DOMAIN, ROLE_CHILD, ROLE_PARENT, SUBENTRY_DEVICE
 from .coordinator import LommepengeConfigEntry, LommepengeCoordinator
+from .http import home_url
 from .runtime import LommepengeRuntime
 
 
@@ -44,6 +45,8 @@ class LommepengeEntity(CoordinatorEntity[LommepengeCoordinator]):
             name=entry.title,
             manufacturer="Lommepenge",
             model="Familie",
+            # "Besøg" på enheden i HA: appen og vejledningen til nye enheder.
+            configuration_url=home_url(coordinator.hass),
         )
 
 

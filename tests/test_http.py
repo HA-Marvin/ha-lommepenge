@@ -5,10 +5,11 @@ from __future__ import annotations
 import time
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.lommepenge.const import ROLE_CHILD, ROLE_PARENT, ROLE_SCREEN
+from custom_components.lommepenge.const import DOMAIN, ROLE_CHILD, ROLE_PARENT, ROLE_SCREEN
 
 from .conftest import GITHUB, AppClient, add_child, paired_app, setup_entry
 
@@ -56,13 +57,24 @@ async def test_install_page_and_pairing(
     client = await hass_client_no_auth()
     token, _ = runtime.async_create_pairing("dev-1", "Køleskab", ROLE_SCREEN, None)
 
+    # Åbnet på computeren (fra linket i HA): kode, QR-kode og forklaring.
     page = await client.get(f"/api/lommepenge/install/{token}")
     html = await page.text()
     assert page.status == 200
-    assert "Køleskab" in html and "Fælles skærm" in html
-    assert f"token={token}" in html and "scheme=lommepenge" in html
+    assert "Tilføj Køleskab" in html and "Fælles skærm" in html
+    assert f'<p class="code">{token}</p>' in html
+    assert "<svg" in html
+    assert "scheme=lommepenge" not in html  # "Åbn appen" kun på Android
     # Ingen app-release endnu: forklaring i stedet for download-knap.
     assert "ikke kunnet hente appen" in html
+
+    # Åbnet på Android (via QR-koden): også "Åbn appen og forbind".
+    page = await client.get(
+        f"/api/lommepenge/install/{token}",
+        headers={"User-Agent": "Mozilla/5.0 (Linux; Android 14) Chrome/130"},
+    )
+    html = await page.text()
+    assert f"token={token}" in html and "scheme=lommepenge" in html
 
     qr = await client.get(f"/api/lommepenge/qr/{token}.svg")
     assert qr.status == 200 and qr.content_type == "image/svg+xml"
@@ -262,3 +274,22 @@ async def test_app_link_without_code(
     await config_entry.runtime_data.releases.async_refresh()
     response = await client.get("/api/lommepenge/app.apk")
     assert response.status == 200 and await response.read() == b"APK!"
+
+
+async def test_home_page_from_ha(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    hass_client_no_auth,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """'Besøg' på familiens enhed i HA fører til appen og vejledningen."""
+    mock_github(aioclient_mock)
+    await setup_entry(hass, config_entry)
+    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, config_entry.entry_id)})
+    assert device.configuration_url.endswith(":8123/api/lommepenge")
+
+    client = await hass_client_no_auth()
+    html = await (await client.get("/api/lommepenge")).text()
+    assert "Hent appen (.apk, version 1.1.0)" in html
+    assert 'href="/api/lommepenge/app.apk"' in html
+    assert "Tilføj enhed" in html

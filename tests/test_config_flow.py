@@ -106,15 +106,12 @@ async def test_add_screen_device(
     result = await _start_device_flow(hass, config_entry, "Køleskab", ROLE_SCREEN)
     assert result["step_id"] == "pair"
     placeholders = result["description_placeholders"]
+    # Dialogen viser koden og et link til siden med app-download og QR-kode.
+    token = placeholders["code"]
+    assert len(token) == 8
     assert placeholders["install_url"].startswith("http://")
-    token = placeholders["install_url"].rsplit("/", 1)[1]
-    assert placeholders["qr_url"] == f"/api/lommepenge/qr/{token}.svg"
-    # Uden kamera: kort kode, HA's adresse og et fast link til appen.
-    assert placeholders["code"] == token
-    base = placeholders["base_url"]
-    assert base.startswith("http://") and base.endswith(":8123")
-    assert placeholders["apk_url"] == f"{base}/api/lommepenge/app.apk"
-    assert placeholders["install_url"] == f"{base}/api/lommepenge/install/{token}"
+    assert placeholders["install_url"].endswith(f":8123/api/lommepenge/install/{token}")
+    assert placeholders["expires"]
 
     # Enheden scanner og forbinder, mens dialogen står åben.
     client = await hass_client_no_auth()
