@@ -10,10 +10,12 @@ CONF_PIN = "pin"
 CONF_PIN_HASH = "pin_hash"
 CONF_PIN_SALT = "pin_salt"
 
-# Options: hvor appens versioner hentes fra (et privat GitHub-repo).
+# Options: hvor appens versioner hentes fra. Som standard integrationens
+# eget (offentlige) repo, hvor hver release også har appens APK. En nøgle
+# kræves kun, hvis man bygger sin egen app i et privat repo.
 CONF_GITHUB_TOKEN = "github_token"
 CONF_GITHUB_REPO = "github_repo"
-DEFAULT_GITHUB_REPO = "HA-Marvin/lommepenge-app"
+DEFAULT_GITHUB_REPO = "HA-Marvin/ha-lommepenge"
 
 # Hver tablet/telefon/skærm er en config subentry af denne type.
 SUBENTRY_DEVICE = "device"

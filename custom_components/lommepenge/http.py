@@ -157,9 +157,8 @@ class InstallPageView(_LocalView):
             )
         else:
             download = (
-                "<p class=\"hint\">Home Assistant har ikke hentet appen endnu. Angiv en "
-                "GitHub-nøgle under integrationens indstillinger. Har enheden allerede "
-                "appen, kan du springe trin 1 over.</p>"
+                "<p class=\"hint\">Home Assistant har ikke kunnet hente appen fra GitHub "
+                "endnu. Har enheden allerede appen, kan du springe trin 1 over.</p>"
             )
         body = (
             f"<p>{escape(runtime.family_name)} · {escape(ROLE_LABELS.get(pairing['role'], ''))}"

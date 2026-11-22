@@ -1,8 +1,9 @@
 """Appens versioner: henter den nyeste release fra GitHub.
 
-HA er den eneste, der kender GitHub-nøglen. Enhederne henter selve
-APK-filen fra HA, som streamer den videre fra GitHub (intet gemmes på
-disken, så den fylder ikke i HA's backups).
+App og integration udgives sammen: hver release i integrationens repo har
+den byggede APK og dens SHA-256 som filer. Enhederne henter APK'en fra HA,
+som streamer den videre fra GitHub (intet gemmes på disken, så den fylder
+ikke i HA's backups). En GitHub-nøgle kræves kun for et privat repo.
 """
 
 from __future__ import annotations
@@ -68,17 +69,16 @@ def version_code(tag: str) -> int | None:
 class GitHubReleases:
     """Læser releases fra ét (privat) repo med en læse-nøgle."""
 
-    def __init__(self, session: aiohttp.ClientSession, repo: str, token: str) -> None:
+    def __init__(self, session: aiohttp.ClientSession, repo: str, token: str | None) -> None:
         self._session = session
         self._repo = repo
         self._token = token
 
     def _headers(self, accept: str = "application/vnd.github+json") -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self._token}",
-            "Accept": accept,
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
+        headers = {"Accept": accept, "X-GitHub-Api-Version": "2022-11-28"}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        return headers
 
     async def _get(self, url: str, accept: str = "application/vnd.github+json") -> aiohttp.ClientResponse:
         try:
@@ -121,8 +121,10 @@ class GitHubReleases:
             )
             return None
 
+        sha_asset = assets[f"{apk['name']}.sha256"]
         checksum = await self._get(
-            assets[f"{apk['name']}.sha256"]["url"], accept="application/octet-stream"
+            sha_asset["url"] if self._token else sha_asset["browser_download_url"],
+            accept="application/octet-stream",
         )
         sha256 = (await checksum.text()).strip().split()[0].lower() if checksum.status == 200 else ""
         checksum.release()
@@ -134,7 +136,9 @@ class GitHubReleases:
             version_code=code,
             sha256=sha256,
             size=apk["size"],
-            asset_url=apk["url"],
+            # Offentligt repo: den almindelige download-adresse (ingen
+            # API-grænse). Privat repo: API'et med nøglen.
+            asset_url=apk["url"] if self._token else apk["browser_download_url"],
             release_url=release.get("html_url", ""),
             notes=release.get("body"),
         )
@@ -167,7 +171,7 @@ class GitHubReleases:
 class ReleaseCoordinator(DataUpdateCoordinator[AppRelease | None]):
     """Tjekker GitHub for en ny version af appen nogle gange i døgnet."""
 
-    def __init__(self, hass: HomeAssistant, entry, repo: str, token: str) -> None:
+    def __init__(self, hass: HomeAssistant, entry, repo: str, token: str | None) -> None:
         super().__init__(
             hass,
             _LOGGER,

@@ -27,7 +27,7 @@ from custom_components.lommepenge.const import (
     SUBENTRY_DEVICE,
 )
 
-from .conftest import AppClient, add_child, setup_entry
+from .conftest import GITHUB, AppClient, add_child, setup_entry
 
 
 async def test_user_flow(hass: HomeAssistant) -> None:
@@ -73,6 +73,7 @@ async def test_options_validate_github_token(
     aioclient_mock.clear_requests()
     aioclient_mock.get(repo, json={"full_name": "HA-Marvin/lommepenge-app"})
     aioclient_mock.get(f"{repo}/releases/latest", status=404)
+    aioclient_mock.get(f"{GITHUB}/releases/latest", status=404)
     old_hash = config_entry.data[CONF_PIN_HASH]
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],

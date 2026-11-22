@@ -53,10 +53,19 @@ from custom_components.lommepenge.runtime import LommepengeRuntime, sign
 PIN = "1234"
 
 
+GITHUB = "https://api.github.com/repos/HA-Marvin/ha-lommepenge"
+
+
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations):
     """Indlæs integrationer fra custom_components/ i alle tests."""
     yield
+
+
+@pytest.fixture(autouse=True)
+def no_app_release(aioclient_mock):
+    """Som standard har GitHub-repoet ingen release med en app endnu."""
+    aioclient_mock.get(f"{GITHUB}/releases/latest", status=404)
 
 
 @pytest.fixture
@@ -81,7 +90,7 @@ def device_subentry(
 
 
 async def setup_entry(hass: HomeAssistant, entry: MockConfigEntry) -> LommepengeRuntime:
-    await async_process_ha_core_config(hass, {"internal_url": "http://192.168.1.129:8123"})
+    await async_process_ha_core_config(hass, {"internal_url": "http://192.168.1.10:8123"})
     if hass.config_entries.async_get_entry(entry.entry_id) is None:
         entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)

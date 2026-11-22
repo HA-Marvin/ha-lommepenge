@@ -25,10 +25,10 @@
     "step": {
       "init": {
         "title": "Lommepenge-indstillinger",
-        "description": "Med en GitHub-nøgle henter Home Assistant nye versioner af appen og giver dem videre til familiens enheder.",
+        "description": "Home Assistant henter appen fra dette repos releases og giver nye versioner videre til familiens enheder. En nøgle skal kun bruges til et privat repo.",
         "data": {
-          "github_token": "GitHub-nøgle (læseadgang til app-repoet)",
-          "github_repo": "App-repo",
+          "github_token": "GitHub-nøgle (kun til et privat repo)",
+          "github_repo": "Repo med appens releases",
           "pin": "Ny forælder-PIN (tom = behold)"
         }
       }

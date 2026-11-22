@@ -8,21 +8,18 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.lommepenge.const import (
-    CONF_GITHUB_TOKEN,
-    ROLE_CHILD,
-    ROLE_PARENT,
-    ROLE_SCREEN,
-)
+from custom_components.lommepenge.const import ROLE_CHILD, ROLE_PARENT, ROLE_SCREEN
 
-from .conftest import AppClient, add_child, paired_app, setup_entry
+from .conftest import GITHUB, AppClient, add_child, paired_app, setup_entry
 
-GITHUB = "https://api.github.com/repos/HA-Marvin/lommepenge-app"
+DOWNLOADS = "https://github.com/HA-Marvin/ha-lommepenge/releases/download"
 SHA = "a" * 64
 
 
 def mock_github(aioclient_mock: AiohttpClientMocker, tag: str = "v1.1.0") -> None:
+    """En release med app: hentes uden nøgle via de almindelige download-links."""
     version = tag.lstrip("v")
+    aioclient_mock.clear_requests()
     aioclient_mock.get(
         f"{GITHUB}/releases/latest",
         json={
@@ -30,17 +27,26 @@ def mock_github(aioclient_mock: AiohttpClientMocker, tag: str = "v1.1.0") -> Non
             "html_url": f"https://github.com/HA-Marvin/lommepenge-app/releases/{tag}",
             "body": "Nyt",
             "assets": [
-                {"name": f"lommepenge-{version}.apk", "url": f"{GITHUB}/releases/assets/1", "size": 4},
+                {
+                    "name": f"lommepenge-{version}.apk",
+                    "url": f"{GITHUB}/releases/assets/1",
+                    "browser_download_url": f"{DOWNLOADS}/{tag}/lommepenge-{version}.apk",
+                    "size": 4,
+                },
                 {
                     "name": f"lommepenge-{version}.apk.sha256",
                     "url": f"{GITHUB}/releases/assets/2",
+                    "browser_download_url": f"{DOWNLOADS}/{tag}/lommepenge-{version}.apk.sha256",
                     "size": 65,
                 },
             ],
         },
     )
-    aioclient_mock.get(f"{GITHUB}/releases/assets/2", text=f"{SHA}  lommepenge-{version}.apk\n")
-    aioclient_mock.get(f"{GITHUB}/releases/assets/1", content=b"APK!")
+    aioclient_mock.get(
+        f"{DOWNLOADS}/{tag}/lommepenge-{version}.apk.sha256",
+        text=f"{SHA}  lommepenge-{version}.apk\n",
+    )
+    aioclient_mock.get(f"{DOWNLOADS}/{tag}/lommepenge-{version}.apk", content=b"APK!")
 
 
 async def test_install_page_and_pairing(
@@ -55,8 +61,8 @@ async def test_install_page_and_pairing(
     assert page.status == 200
     assert "Køleskab" in html and "Fælles skærm" in html
     assert f"token={token}" in html and "scheme=lommepenge" in html
-    # Ingen GitHub-nøgle endnu: forklaring i stedet for download-knap.
-    assert "GitHub-nøgle" in html
+    # Ingen app-release endnu: forklaring i stedet for download-knap.
+    assert "ikke kunnet hente appen" in html
 
     qr = await client.get(f"/api/lommepenge/qr/{token}.svg")
     assert qr.status == 200 and qr.content_type == "image/svg+xml"
@@ -183,9 +189,8 @@ async def test_app_download_and_update_info(
     hass_client_no_auth,
     aioclient_mock: AiohttpClientMocker,
 ) -> None:
+    # Integrationens eget, offentlige repo - ingen GitHub-nøgle.
     mock_github(aioclient_mock)
-    config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(config_entry, options={CONF_GITHUB_TOKEN: "ghp_x"})
     runtime = await setup_entry(hass, config_entry)
     client = await hass_client_no_auth()
 

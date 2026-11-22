@@ -1,0 +1,83 @@
+name: Release
+
+# Et tag som v0.3.0 udgiver integration og app sammen: releasen er det,
+# HACS/Marketplace installerer, og den signerede APK + SHA-256 lægges på
+# den samme release. Integrationen i Home Assistant henter APK'en derfra og
+# fordeler den til familiens enheder.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Version fra tag
+        id: version
+        run: |
+          name="${GITHUB_REF_NAME#v}"
+          IFS=. read -r major minor patch <<< "$name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$((major * 10000 + minor * 100 + patch))" >> "$GITHUB_OUTPUT"
+          manifest=$(jq -r .version custom_components/lommepenge/manifest.json)
+          if [ "$manifest" != "$name" ]; then
+            echo "::error::manifest.json har version $manifest, men tagget er $name"
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.1"
+          channel: stable
+          cache: true
+
+      - name: Signeringsnøgle
+        working-directory: app
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Hemmeligheden KEYSTORE_BASE64 mangler (se app/README.md)"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.jks
+          cat > android/key.properties <<PROPS
+          storeFile=release.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyPassword=$KEYSTORE_PASSWORD
+          keyAlias=lommepenge
+          PROPS
+
+      - name: Byg APK
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter test
+          flutter build apk --release \
+            --target-platform android-arm,android-arm64 \
+            --build-name "${{ steps.version.outputs.name }}" \
+            --build-number "${{ steps.version.outputs.code }}"
+          apk="lommepenge-${{ steps.version.outputs.name }}.apk"
+          mv build/app/outputs/flutter-apk/app-release.apk "$GITHUB_WORKSPACE/$apk"
+          cd "$GITHUB_WORKSPACE"
+          sha256sum "$apk" | cut -d' ' -f1 > "$apk.sha256"
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk="lommepenge-${{ steps.version.outputs.name }}.apk"
+          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" "$apk" "$apk.sha256" --clobber

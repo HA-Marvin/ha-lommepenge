@@ -122,9 +122,11 @@ class LommepengeOptionsFlow(OptionsFlow):
             new_pin = (user_input.get(CONF_PIN) or "").strip()
             if new_pin and not PIN_PATTERN.match(new_pin):
                 errors[CONF_PIN] = "invalid_pin"
-            if token and not errors:
+            if not errors:
                 try:
-                    await GitHubReleases(async_get_clientsession(self.hass), repo, token).validate()
+                    await GitHubReleases(
+                        async_get_clientsession(self.hass), repo, token or None
+                    ).validate()
                 except GitHubAuthError:
                     errors[CONF_GITHUB_TOKEN] = "invalid_token"
                 except GitHubError:

@@ -93,12 +93,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: LommepengeConfigEntry) -
     runtime.coordinator = LommepengeCoordinator(hass, entry, runtime)
     await runtime.coordinator.async_config_entry_first_refresh()
 
-    if token := entry.options.get(CONF_GITHUB_TOKEN):
-        runtime.releases = ReleaseCoordinator(
-            hass, entry, entry.options.get(CONF_GITHUB_REPO, DEFAULT_GITHUB_REPO), token
-        )
-        # En fejl her (fx ingen internet) må ikke stoppe resten.
-        await runtime.releases.async_refresh()
+    runtime.releases = ReleaseCoordinator(
+        hass,
+        entry,
+        entry.options.get(CONF_GITHUB_REPO, DEFAULT_GITHUB_REPO),
+        entry.options.get(CONF_GITHUB_TOKEN) or None,
+    )
+    # En fejl her (fx ingen internet) må ikke stoppe resten.
+    await runtime.releases.async_refresh()
 
     entry.runtime_data = runtime
     hass.data[DOMAIN] = runtime

@@ -25,10 +25,10 @@
     "step": {
       "init": {
         "title": "Lommepenge settings",
-        "description": "With a GitHub token, Home Assistant fetches new versions of the app and hands them to the family's devices.",
+        "description": "Home Assistant fetches the app from the releases of this repository and hands new versions to the family's devices. A token is only needed for a private repository.",
         "data": {
-          "github_token": "GitHub token (read access to the app repository)",
-          "github_repo": "App repository",
+          "github_token": "GitHub token (only for a private repository)",
+          "github_repo": "Repository with the app releases",
           "pin": "New parent PIN (leave empty to keep)"
         }
       }

@@ -1,9 +1,18 @@
-# Lommepenge – Home Assistant-integration
+# Lommepenge – Home Assistant + Android-app
 
-Home Assistant som server for familiens lommepenge-app: HA gemmer opgaver,
-udførelser og saldi, følger op på frister, og er det eneste sted appen på
-den fælles skærm, forældrenes telefoner og børnenes tablets taler med.
-Kun hjemmenettet – ingen cloud.
+Familiens opgaver og lommepenge med Home Assistant som server: HA gemmer
+opgaver, udførelser og saldi, følger op på frister, og er det eneste sted
+appen på den fælles skærm, forældrenes telefoner og børnenes tablets
+taler med. Kun hjemmenettet – ingen cloud.
+
+Repoet indeholder begge dele, udgivet sammen med ét versionsnummer:
+
+- `custom_components/lommepenge` – integrationen (installeres via HACS/Marketplace)
+- `app/` – Android-appen (Flutter), se [app/README.md](app/README.md)
+- `blueprints/` – automationer til godkendelse og spærring
+
+Hver release har både integrationen og den signerede APK, som HA henter og
+giver videre til familiens enheder.
 
 ## Installation
 
@@ -12,8 +21,9 @@ Kun hjemmenettet – ingen cloud.
 2. Installér *Lommepenge* og genstart Home Assistant.
 3. *Indstillinger → Enheder og tjenester → Tilføj integration →
    Lommepenge*: familiens navn og forælder-PIN (4–8 cifre).
-4. *Konfigurér*: en GitHub-nøgle med læseadgang til app-repoet. Så henter
-   HA appens versioner og giver dem videre til enhederne.
+HA henter appen fra dette repos releases af sig selv – der skal ikke
+bruges nogen GitHub-nøgle. (*Konfigurér* kan pege på et andet repo, fx et
+privat med en nøgle, hvis du bygger din egen app.)
 
 Opgraderer du fra 0.1 (hvor køleskabsskærmen var server): slet den gamle
 integration først og tilføj den igen.
@@ -83,11 +93,18 @@ HACS installerer ikke blueprints. Importér dem med knapperne herunder (eller
   krop, og må højst være 5 minutter gamle.
 - HA's ur bestemmer, hvornår en opgave er udført (og dermed "for sent").
 - Familiens data og enhedsnøgler ligger i `.storage/lommepenge.<id>` og
-  kommer med i HA's backups. GitHub-nøglen bruges kun af HA.
+  kommer med i HA's backups. Appen indeholder ingen familiedata, adresser
+  eller nøgler – dem får den først ved parringen.
 
-## Udvikling
+## Udvikling og udgivelse
 
 ```bash
 pip install -r requirements_test.txt
-pytest
+pytest                       # integrationen
+cd app && flutter test       # appen
 ```
+
+En release laves med et tag `vX.Y.Z` (samme version i
+`custom_components/lommepenge/manifest.json`). `.github/workflows/release.yml`
+bygger den signerede APK og lægger den på releasen. Signeringsnøglen ligger
+som hemmelighederne `KEYSTORE_BASE64` og `KEYSTORE_PASSWORD`.
