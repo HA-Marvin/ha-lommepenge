@@ -1,7 +1,7 @@
 name: lommepenge_app
 description: "Lommepenge app for the family - tasks and approval with Home Assistant as the server."
 publish_to: 'none'
-version: 0.4.0+400
+version: 0.4.1+401
 
 environment:
   sdk: '>=3.5.0 <4.0.0'

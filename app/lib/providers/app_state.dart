@@ -913,8 +913,18 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _disposed = false;
+
+  /// A sync that was started before [dispose] may finish afterwards; its
+  /// result is then simply dropped.
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
   @override
   void dispose() {
+    _disposed = true;
     _syncTimer?.cancel();
     _linkSubscription?.cancel();
     _installFailureSubscription?.cancel();
