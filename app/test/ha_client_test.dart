@@ -26,6 +26,17 @@ class FakeHa {
   String currency = 'DKK';
   int stateRequests = 0;
 
+  /// How far HA's clock is ahead of the device's. Like the real HA, a
+  /// signature more than 5 minutes off is refused with `clock_skew`.
+  Duration clockAhead = Duration.zero;
+  int clockSkewAnswers = 0;
+
+  /// Answer every signed request with this 401 `code` (without serverTime).
+  String? forcedErrorCode;
+
+  int get serverTime =>
+      DateTime.now().add(clockAhead).millisecondsSinceEpoch ~/ 1000;
+
   Uri get baseUrl => Uri.parse('http://127.0.0.1:${server.port}');
 
   String installLink(String token) => '$baseUrl/api/lommepenge/install/$token';
@@ -102,7 +113,29 @@ class FakeHa {
           )['X-Signature'];
     if (device == null || expected != request.headers.value('X-Signature')) {
       response.statusCode = 401;
-      response.write(jsonEncode({'error': 'Unknown device.'}));
+      response.write(jsonEncode({
+        'error': 'Unknown device.',
+        'code': device == null ? 'device_not_connected' : 'invalid_signature',
+        'serverTime': serverTime,
+      }));
+      await response.close();
+      return;
+    }
+    if (forcedErrorCode != null) {
+      response.statusCode = 401;
+      response.write(jsonEncode({'error': 'Refused.', 'code': forcedErrorCode}));
+      await response.close();
+      return;
+    }
+    final timestamp = int.parse(request.headers.value('X-Timestamp')!);
+    if ((timestamp - serverTime).abs() > 300) {
+      clockSkewAnswers++;
+      response.statusCode = 401;
+      response.write(jsonEncode({
+        'error': "The device's clock is wrong, or the request is too old.",
+        'code': 'clock_skew',
+        'serverTime': serverTime,
+      }));
       await response.close();
       return;
     }
@@ -270,6 +303,52 @@ void main() {
       expect(appState.isConnected, isFalse);
       expect(appState.connectionMessage, contains('removed in Home Assistant'));
       expect(appState.hasPin, isFalse);
+    });
+
+    test('a wrong clock is corrected without a new pairing', () async {
+      // HA's clock is an hour ahead (or the device's is an hour behind).
+      ha.clockAhead = const Duration(hours: 1);
+      ha.tokens['t1'] = (role: 'parent', childId: null);
+      expect(await appState.connectWithLink(ha.installLink('t1')), isNull);
+
+      expect(appState.isConnected, isTrue);
+      expect(appState.syncStatus, SyncStatus.connected);
+      expect(appState.children.map((c) => c.name), ['Emma', 'Oscar']);
+      expect(ha.clockSkewAnswers, 1);
+      expect(
+        settings.clockOffsetMs,
+        closeTo(const Duration(hours: 1).inMilliseconds, 5000),
+      );
+
+      // Actions are signed with the corrected time too.
+      await appState.addChild('Ida');
+      expect(ha.actions.single['payload']['name'], 'Ida');
+      expect(ha.clockSkewAnswers, 1);
+
+      // The correction is remembered after a restart.
+      final restarted =
+          AppState(settings: settings, repository: appState.repository);
+      await restarted.syncNow();
+      expect(restarted.syncStatus, SyncStatus.connected);
+      expect(ha.clockSkewAnswers, 1);
+      restarted.dispose();
+    });
+
+    test('only a revoked or invalid key forgets the connection', () async {
+      ha.tokens['t1'] = (role: 'parent', childId: null);
+      await appState.connectWithLink(ha.installLink('t1'));
+
+      // Other refusals (e.g. a missing timestamp) keep the connection.
+      ha.forcedErrorCode = 'missing_timestamp';
+      await appState.syncNow();
+      expect(appState.isConnected, isTrue);
+      expect(appState.syncStatus, SyncStatus.offline);
+      expect(appState.syncMessage, 'Refused.');
+
+      ha.forcedErrorCode = 'invalid_signature';
+      await appState.syncNow();
+      expect(appState.isConnected, isFalse);
+      expect(appState.connectionMessage, contains('removed in Home Assistant'));
     });
 
     test('a new version in HA is shown as an update', () async {

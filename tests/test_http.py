@@ -10,6 +10,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.lommepenge.const import DOMAIN, ROLE_CHILD, ROLE_PARENT, ROLE_SCREEN
+from custom_components.lommepenge.runtime import sign
 
 from .conftest import GITHUB, AppClient, add_child, family_entry, paired_app, setup_entry
 
@@ -119,19 +120,33 @@ async def test_signature_is_required(
     client = await hass_client_no_auth()
     app = await paired_app(hass, config_entry, client, "Mum", ROLE_PARENT)
 
-    assert (await client.get("/api/lommepenge/state")).status == 401
+    response = await client.get("/api/lommepenge/state")
+    assert response.status == 401
+    assert (await response.json())["code"] == "device_not_connected"
 
     headers = app.headers("GET", "/api/lommepenge/state", b"")
     headers["X-Signature"] = "0" * 64
-    assert (await client.get("/api/lommepenge/state", headers=headers)).status == 401
+    response = await client.get("/api/lommepenge/state", headers=headers)
+    assert response.status == 401
+    assert (await response.json())["code"] == "invalid_signature"
 
     headers = app.headers("GET", "/api/lommepenge/state", b"")
     headers["X-Timestamp"] = str(int(time.time()) - 3600)
     response = await client.get("/api/lommepenge/state", headers=headers)
     assert response.status == 401
-    assert (await response.json())["error"] == (
-        "The device's clock is wrong, or the request is too old."
-    )
+    body = await response.json()
+    assert body["error"] == "The device's clock is wrong, or the request is too old."
+    # HA's own time comes along, so the app can correct its clock instead of
+    # being disconnected.
+    assert body["code"] == "clock_skew"
+    assert abs(body["serverTime"] - time.time()) < 5
+
+    # A request signed with the corrected time works with the same key.
+    timestamp = str(body["serverTime"])
+    headers = app.headers("GET", "/api/lommepenge/state", b"")
+    headers["X-Timestamp"] = timestamp
+    headers["X-Signature"] = sign(app.key, timestamp, "GET", "/api/lommepenge/state", b"")
+    assert (await client.get("/api/lommepenge/state", headers=headers)).status == 200
 
 
 async def test_parent_runs_the_family(

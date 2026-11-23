@@ -112,7 +112,10 @@ class HaResult {
   final Map<String, dynamic>? state;
   final String? errorMessage;
 
-  /// HA no longer knows the device (removed under "Devices" in HA).
+  /// HA no longer knows the device (removed under "Devices" in HA), or the
+  /// device's key is no longer valid. The ONLY case where the app forgets the
+  /// connection - a wrong clock is corrected instead (see
+  /// [HaClient.clockOffset]).
   final bool unauthorized;
 
   /// HA could not be reached - the action can be sent again later.
@@ -152,6 +155,21 @@ class HaClient {
   /// The texts for the app's own error messages; set by `AppState` when the
   /// language changes.
   AppLocalizations l10n = l10nFor(defaultLanguage);
+
+  /// How far HA's clock is ahead of this device's (HA time - device time).
+  /// Added to the device's clock when signing, so a device with a wrong
+  /// clock keeps working without a new pairing. Learned from HA's
+  /// `clock_skew` answer (which carries HA's own time); time zones do not
+  /// matter, as requests are signed with Unix time.
+  Duration clockOffset = Duration.zero;
+
+  /// Called when [clockOffset] has been corrected, so it can be stored.
+  void Function(Duration offset)? onClockOffsetChanged;
+
+  /// Error codes from HA (`code` in a 401 answer) that mean the device's key
+  /// is revoked or invalid. Every other 401 (e.g. `clock_skew`) keeps the
+  /// connection.
+  static const revokedCodes = {'device_not_connected', 'invalid_signature'};
 
   HaClient({this.timeout = const Duration(seconds: 8)});
 
@@ -218,7 +236,9 @@ class HaClient {
     DateTime? now,
   }) {
     final timestamp =
-        ((now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000).toString();
+        ((now ?? DateTime.now().add(clockOffset)).millisecondsSinceEpoch ~/
+                1000)
+            .toString();
     final message = [
       ...utf8.encode('$timestamp\n${method.toUpperCase()}\n$path\n'),
       ...body,
@@ -278,8 +298,9 @@ class HaClient {
     HaConnection connection,
     String method,
     String path,
-    List<int> body,
-  ) async {
+    List<int> body, {
+    bool retryOnClockSkew = true,
+  }) async {
     final client = HttpClient()..connectionTimeout = timeout;
     try {
       final request = await client
@@ -292,9 +313,32 @@ class HaClient {
       final response = await request.close().timeout(timeout);
       final decoded = await _decode(response);
       if (response.statusCode == 401) {
+        final code = decoded['code'];
+        final serverTime = decoded['serverTime'];
+        if (code == 'clock_skew' && serverTime is num) {
+          // The device's clock is wrong: correct for the difference and try
+          // once more. Never a reason to forget the connection.
+          clockOffset = Duration(
+            milliseconds: (serverTime * 1000).round() -
+                DateTime.now().millisecondsSinceEpoch,
+          );
+          onClockOffsetChanged?.call(clockOffset);
+          if (retryOnClockSkew) {
+            client.close(force: true);
+            return _send(
+              connection,
+              method,
+              path,
+              body,
+              retryOnClockSkew: false,
+            );
+          }
+        }
         return HaResult.failure(
           decoded['error'] as String? ?? l10n.deviceNoLongerConnected,
-          unauthorized: true,
+          // An older HA without `code`: as before, a 401 means the device
+          // is no longer connected.
+          unauthorized: code == null || revokedCodes.contains(code),
         );
       }
       if (response.statusCode != 200) {

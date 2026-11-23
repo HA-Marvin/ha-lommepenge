@@ -27,6 +27,7 @@ from ipaddress import ip_address
 import io
 import json
 import logging
+import time
 from typing import Any
 from urllib.parse import quote
 
@@ -158,8 +159,18 @@ class _SignedView(_LocalView):
         try:
             device = runtime.verify(headers, request.method, request.path, body)
         except AuthError as err:
+            # `code` tells the app what to do: only an unknown/revoked device
+            # or a wrong key means "connect again". On `clock_skew` the app
+            # corrects its clock with `serverTime` (Unix time) and retries -
+            # a wrong clock must never require a new pairing.
             raise web.HTTPUnauthorized(
-                text=json.dumps({"error": err.translate(_language(request, runtime))}),
+                text=json.dumps(
+                    {
+                        "error": err.translate(_language(request, runtime)),
+                        "code": err.key,
+                        "serverTime": int(time.time()),
+                    }
+                ),
                 content_type="application/json",
             ) from err
         runtime.async_device_seen(device, headers)

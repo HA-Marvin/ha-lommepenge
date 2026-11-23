@@ -89,6 +89,11 @@ class AppState extends ChangeNotifier {
   })  : _client = client ?? HaClient(),
         _native = native ?? NativeBridge() {
     _applyLanguage();
+    // A wrong clock on the device is corrected with HA's time instead of
+    // forcing a new pairing; the correction survives restarts.
+    _client.clockOffset = Duration(milliseconds: settings.clockOffsetMs);
+    _client.onClockOffsetChanged =
+        (offset) => settings.setClockOffsetMs(offset.inMilliseconds);
   }
 
   // ---- Language ------------------------------------------------------------

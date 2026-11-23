@@ -67,6 +67,11 @@ class SettingsService {
   // only comes once per version).
   static const _keyNotifiedUpdateCode = 'notified_update_code';
 
+  // HA's clock minus the device's clock, in milliseconds (see
+  // HaClient.clockOffset). Kept when the connection is forgotten - it
+  // belongs to the device's clock, not to the connection.
+  static const _keyClockOffsetMs = 'clock_offset_ms';
+
   static const _keyTotalPaidOutOre = 'total_paid_out_ore';
   static const _keyPaidOutByChild = 'paid_out_by_child';
   static const _keyOfflineQueue = 'offline_action_queue';
@@ -199,6 +204,10 @@ class SettingsService {
   String get familyName => _prefs.getString(_keyFamilyName) ?? 'Lommepenge';
   Future<void> setFamilyName(String name) =>
       _prefs.setString(_keyFamilyName, name);
+
+  int get clockOffsetMs => _prefs.getInt(_keyClockOffsetMs) ?? 0;
+  Future<void> setClockOffsetMs(int value) =>
+      _prefs.setInt(_keyClockOffsetMs, value);
 
   int get notifiedUpdateCode => _prefs.getInt(_keyNotifiedUpdateCode) ?? 0;
   Future<void> setNotifiedUpdateCode(int code) =>
