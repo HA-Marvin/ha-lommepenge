@@ -23,7 +23,7 @@ available. The language is always chosen explicitly – it never follows Home
 Assistant's, the browser's or the phone's language, because many families run
 Home Assistant in English but want e.g. Danish for the family.
 
-- **The integration** – entity names, restriction reasons, notification texts
+- **The integration** – entity names, lock reasons, notification texts
   for the blueprints and the install page – uses the language chosen when it
   is set up (*Configure* changes it).
 - **The app** asks for its language on first start (English is preselected).
@@ -93,28 +93,37 @@ language; in English:
 | --- | --- |
 | `sensor.lommepenge_<child>_balance` | The child's balance (in the chosen currency) |
 | `sensor.lommepenge_<child>_earned_this_week` | Earned in the last 7 days |
-| `binary_sensor.lommepenge_<child>_tablet_restricted` | On = the tablet should be restricted now. Attributes: `reason`, `overdue`, `due_today`, `late_pause_until`, `child_id` |
+| `binary_sensor.lommepenge_<child>_tablet_restricted` | On = a lock is running (drive the network rule with it). Attributes: `lock_status` (`none`/`pending`/`running`), `reason`, `started_at`, `ends_at`, `pending_since`, `paused`, `overdue`, `due_today`, `child_id` |
 | `binary_sensor.lommepenge_<child>_overdue_task` | On = a mandatory task is past its deadline |
-| `button.lommepenge_<child>_lift_restriction_today` | Lifts the restriction for the rest of the day |
+| `button.lommepenge_<child>_lift_lock` | Clears the child's pending and running lock |
+| `switch.lommepenge_<child>_tasks_paused` | Pause: no task is mandatory (no deadline, no lock), tasks still earn money. Attribute `paused_until` |
+
+**Locks:** an overdue or rejected mandatory task locks the child's tablet.
+The lock waits until the child uses the tablet, then runs for the lock
+duration (default 60 minutes) and ends by itself; a lock that has not
+started lapses after 24 hours. A late task done before its lock started
+gives only the short "pause when done late" lock and still earns money;
+once a lock has run out, its task gives no money that day. One lock at a
+time, and one penalty per task occurrence.
 
 **For the family:** `sensor.<family>_awaiting_approval` (attribute
 `pending` with `amount` and `currency`; the old `amount_kr` is kept for
-existing automations), the times `time.<family>_default_deadline`,
-`..._restriction_from`, `..._restriction_until` and the limits
-`number.<family>_pause_when_done_late`, `..._warning_before_deadline`,
-`..._winter_from_week`, `..._winter_until_week`.
+existing automations), the time `time.<family>_default_deadline` and the
+limits `number.<family>_lock_duration`, `..._pause_when_done_late`,
+`..._warning_before_deadline`, `..._winter_from_week`, `..._winter_until_week`.
 
 **Per device:** `update.<device>_app` (installed and latest app version) and
 `sensor.<device>_last_contact`.
 
-**Services:** `lommepenge.approve`, `lommepenge.reject`,
-`lommepenge.suspend_restriction`.
+**Services:** `lommepenge.approve`, `lommepenge.reject` (optional `reason`,
+shown to the child), `lommepenge.lift_lock`, `lommepenge.pause` (optional
+`until` date) and `lommepenge.resume`.
 
 **Event:** `lommepenge_event` with `event` = `completion_pending`,
-`completion_approved`, `completion_rejected` or `restriction_changed`, plus
-details (child, task, amount, `completionId`, `late` …). Completion events
-also have `message`: a ready-made notification text in the integration's
-language.
+`completion_approved`, `completion_rejected`, `lock_started`, `lock_ended`
+or `lock_lifted`, plus details (child, task, amount, `completionId`, `late`,
+the lock's `reason`, `minutes`, `endsAt` …). Completion events also have
+`message`: a ready-made notification text in the integration's language.
 
 ## Blueprints
 
@@ -127,14 +136,19 @@ HACS does not install blueprints. Import them with the buttons below (or
 - **Approve via notification** – Approve/Reject buttons on the selected
   parents' phones. Only taps from the selected people's HA users are carried
   out. The notification disappears for everyone once the task is decided.
-- **Restrict tablet on overdue task** – one automation per child. Turns on a
+- **Restrict tablet while locked** – one automation per child. Turns on a
   switch (e.g. a UniFi traffic rule that blocks YouTube/games for the child's
-  tablet) while the child is restricted. Optional message to the parents with
-  a button to lift the restriction for today.
+  tablet) exactly while the child's lock runs, re-syncs it when HA starts,
+  and turns it off if Lommepenge has been unavailable for 10 minutes. Parents
+  are not notified about locks; they are in the app's history.
 
-The notification text and restriction reason come from the integration in its
-language. Button labels and titles are blueprint inputs with English
-defaults – change them when you create the automation.
+The approval notification text comes from the integration in its language.
+Button labels and titles are blueprint inputs with English defaults – change
+them when you create the automation.
+
+With the locks, the restriction blueprint has only two inputs (the sensor
+and the switch). Re-import it, then open and save each automation made from
+it (the sensor and switch are kept; the old notification inputs are dropped).
 
 The blueprints were renamed in 0.4.0 (`godkendelse.yaml` → `approval.yaml`,
 `spaerring.yaml` → `restriction.yaml`). Automations made from the old

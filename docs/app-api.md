@@ -25,8 +25,7 @@ The install page, QR code and first-time APK download
 ## Conventions
 
 - **JSON** everywhere, UTF-8. The app must ignore fields it does not know; new
-  fields can be added at any time (for example a per-child `lock`, see
-  [Coming later](#coming-later)).
+  fields can be added at any time.
 - **Amounts** are integers in 1/100 of the family's currency (`…Ore` fields,
   e.g. `500` = 5.00). The currency text is in `state.currency` (e.g. `"DKK"`).
 - **Times** (`now`, `deadline`, `completedAt`, `at`, …) are HA's **local** time
@@ -36,7 +35,8 @@ The install page, QR code and first-time APK download
 - **Ids** are strings. Ids the app creates (completions, tasks, children,
   adjustments) should be UUID v4 and at most 100 characters.
 - **Language:** send the app's chosen language in `X-Lommepenge-Language`
-  (`en`, `da`, `de`, `es`, `fr`) on every request; HA writes `error` texts in
+  (`en`, `da`, `de`, `es`, `fr`) on every request; HA writes `error` texts,
+  lock reasons (`lock.reason`, history `note`) and notification `message`s in
   that language.
 
 ## Signing
@@ -168,7 +168,45 @@ action.
           "deadline": "2026-11-23T18:00:00.000",
           "status": "available",
           "completionId": null,
-          "late": false
+          "late": false,
+          "forfeited": false
+        }
+      ],
+      "lock": {
+        "status": "running",
+        "reason": "Missing: Empty the dishwasher (due 18:00)",
+        "reasons": [
+          {
+            "kind": "overdue",
+            "taskId": "t1",
+            "taskTitle": "Empty the dishwasher",
+            "date": "2026-11-23",
+            "deadline": "2026-11-23T18:00:00.000",
+            "reason": null,
+            "absorbed": false
+          }
+        ],
+        "minutes": 60,
+        "pendingSince": "2026-11-23T18:00:30.000",
+        "pendingUntil": null,
+        "startedAt": "2026-11-23T18:20:00.000",
+        "endsAt": "2026-11-23T19:20:00.000"
+      },
+      "paused": false,
+      "pausedUntil": null,
+      "notifications": [
+        {
+          "id": "n-uuid",
+          "type": "lockStarted",
+          "at": "2026-11-23T18:20:00.000",
+          "taskId": null,
+          "taskTitle": null,
+          "date": null,
+          "deadline": null,
+          "reason": "Missing: Empty the dishwasher (due 18:00)",
+          "minutes": 60,
+          "endsAt": "2026-11-23T19:20:00.000",
+          "message": "The tablet is locked for 60 minutes. Missing: Empty the dishwasher (due 18:00)"
         }
       ]
     }
@@ -179,12 +217,16 @@ action.
 }
 ```
 
-`children` contains only the tablet's own child. `appUpdate` is `null` when HA
-has not fetched a release.
+`children` contains only the tablet's own child, with its `lock` (see
+[Locks](#locks)), `paused`/`pausedUntil` (see [Pause](#pause)) and its
+`notifications` (see [Notifications](#notifications)). `appUpdate` is `null`
+when HA has not fetched a release.
 
 ### Family screen and parent's phone (`role = screen | parent`)
 
-The same fields, with **all** children in `children` (sorted), plus:
+The same fields, with **all** children in `children` (sorted) – each with
+`lock`, `paused` and `pausedUntil`, but **without** `notifications` (those are
+only for the child's tablet) – plus:
 
 ```json
 {
@@ -218,8 +260,7 @@ The same fields, with **all** children in `children` (sorted), plus:
   ],
   "settings": {
     "defaultDueTime": "18:00",
-    "restrictionStart": "15:00",
-    "restrictionEnd": "21:00",
+    "lockMinutes": 60,
     "latePauseMinutes": 10,
     "warningMinutes": 60,
     "winterFromWeek": 43,
@@ -234,8 +275,8 @@ The same fields, with **all** children in `children` (sorted), plus:
 - `tasks`: the active tasks with all fields, for the edit screens.
   `activeWeekdays` is `null` (every day) or ISO weekdays 1 = Monday … 7 = Sunday.
   `assignedChildIds` is `null` (all children) or a list of child ids.
-- `settings`: see `set_setting`. (`restrictionStart`/`restrictionEnd` are being
-  removed with the new locks; ignore them.)
+- `settings`: see `set_setting`. The old `restrictionStart`/`restrictionEnd`
+  are gone.
 - `pinHash`/`pinSalt`: the parent PIN for the family screen's parent mode.
   A PIN is correct when `lowercase hex SHA-256(UTF-8 of pinSalt + ":" + pin)`
   equals `pinHash`. Never sent to a child's tablet.
@@ -248,19 +289,22 @@ title. The app shows them as they are and calculates nothing.
 
 | Field | Meaning |
 | --- | --- |
-| `taskId`, `title`, `description`, `recurrence`, `mandatory`, `startTime`, `dueTime` | From the task. `recurrence`: `once`, `daily`, `weekly`, `unlimited`. |
-| `amountOre` | What the task gives (for a pending completion: the amount when it was done). |
+| `taskId`, `title`, `description`, `recurrence`, `startTime`, `dueTime` | From the task. `recurrence`: `once`, `daily`, `weekly`, `unlimited`. |
+| `mandatory` | From the task – but `false` for every task while the child is [paused](#pause). |
+| `amountOre` | What the task gives now (for a pending completion: what it gave when it was done). `0` when `forfeited`. |
 | `date` | The day of this occurrence. |
 | `deadline` | When the occurrence is late, or `null` (optional tasks have no deadline). `dueTime` of the task, else `settings.defaultDueTime`, on `date`. |
 | `status` | `available`, `overdue`, `awaitingApproval` or `upcoming`. |
 | `completionId` | The pending completion when `awaitingApproval`, else `null`. |
 | `late` | `true` when the pending completion was done after the deadline. |
+| `forfeited` | `true` for an `overdue` entry whose lock has run out: doing it now gives no money (`amountOre` is `0`). |
 
 Status:
 
 - `available` – can be marked as done now (button enabled).
 - `overdue` – the deadline has passed; it can still be marked as done (the
-  completion is then `late`). Disappears at midnight if not done.
+  completion is then `late`). Disappears at midnight if not done. See
+  [Locks](#locks) for what lateness costs.
 - `awaitingApproval` – done, waiting for a parent. One entry stays until it is
   handled.
 - `upcoming` – a later day within the horizon; cannot be marked as done yet.
@@ -287,6 +331,90 @@ Rules HA applies (for understanding; the app does not repeat them):
   (a parent must create it again). A missed weekly task returns 7 days after
   the missed deadline. Awaiting-approval entries are never removed.
 
+## Locks
+
+HA decides everything about locks; the app only shows `children[].lock` and,
+on the child's tablet, reports use (`report_use`) and shows a countdown.
+
+| Field | Meaning |
+| --- | --- |
+| `status` | `none`, `pending` (waits for the child to use the tablet) or `running`. |
+| `reason` | Ready-made text for all causes, in the app's language, e.g. `Missing: Empty the dishwasher (due 18:00); Rejected: Tidy up`. `null` when `none`. Show it under the countdown. |
+| `reasons` | The causes, oldest first: `kind` (`overdue`, `rejected` or `late`), `taskId`, `taskTitle`, `date` (the occurrence), `deadline`, `reason` (the parent's reason for a rejection, else `null`), `absorbed` (`true` = arrived while the lock was running and did not extend it). |
+| `minutes` | How long it runs (`running`) or will run when it starts (`pending`). |
+| `pendingSince` | When the lock was caused. |
+| `pendingUntil` | `pending` only: when it lapses unstarted (24 hours after `pendingSince`). |
+| `startedAt`, `endsAt` | `running` only: start and end. **Countdown = `endsAt` − `now`** (use `state.now`, HA's time, not the tablet's clock; count down locally between polls). |
+
+When `status` is `none` all other fields are `null` and `reasons` is `[]`.
+A `running` lock whose `endsAt` has passed is already reported as `none`.
+Lock types other than the network rule (e.g. an overlay on other apps) may
+be added later as new fields; ignore what you do not know.
+
+Rules HA applies (for understanding):
+
+- **Causes:** a mandatory task becomes `overdue`, or a mandatory task is
+  rejected (`reject_completion`).
+- **Every lock waits** until the child's tablet reports use (`report_use`
+  with `screen_on` or `user_present`). Then it runs `minutes` and ends by
+  itself. A pending lock lapses 24 hours after it was caused.
+- **Duration:** `settings.lockMinutes` (default 60). If the late task is done
+  while the lock is still pending, its cause becomes `late` and – when all
+  causes are `late` – the lock runs only `settings.latePauseMinutes`
+  (default 10; `0` = no lock). The task still earns money.
+- **Money:** a late task done while its lock is pending or running earns its
+  amount. Once the lock has **run out**, the task is `forfeited`: done after
+  that it gives `0`, and the child gets a `forgotten` notification at that
+  moment.
+- **One lock at a time:** new causes join a pending lock; causes that arrive
+  while a lock runs are absorbed (no new lock, no extension, and they are
+  forfeited when that lock runs out). One penalty per task occurrence – an
+  occurrence never locks twice, not even after the lock was lifted.
+- **Midnight:** a late task is removed as usual; a lock that has not started
+  yet stays pending (and still lapses 24 hours after it was caused).
+- **Lift lock** (`lift_lock`, parents) clears the pending or running lock.
+  New causes can lock again.
+- The tablet must be online to be locked; HA turns the network rule on only
+  while `status` is `running`.
+
+## Pause
+
+`children[].paused` is `true` while the child is paused, and `pausedUntil` is
+the date the pause ends (`"YYYY-MM-DD"`, tasks are mandatory again from 00:00
+that day) or `null` (until a parent resumes). While paused, no task is
+mandatory: no deadline, never `overdue`, no lock – but tasks still earn
+money. When the pause ends, the tasks start over (nothing from during the
+pause becomes overdue). Set with `set_pause`; pausing also lifts the lock.
+
+## Notifications
+
+The child's tablet gets `children[0].notifications` in every state response:
+the child's notifications from the last **7 days**, newest first. There is no
+read state; HA deletes them after 7 days. There is no separate endpoint – the
+foreground service polls `GET /state` and shows an Android notification for
+each `id` it has not shown before (remember the shown ids on the device; they
+are unique).
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Unique id. |
+| `type` | See below. |
+| `at` | When it happened (HA's time). |
+| `message` | Ready-made text in the app's language – show this. |
+| `taskId`, `taskTitle`, `date`, `deadline` | The task occurrence, when the type has one (`taskTitle` as it was then). |
+| `reason` | `rejected`: the parent's reason (or `null`). `lockStarted`: the lock's reason text. Otherwise `null`. |
+| `minutes`, `endsAt` | `lockStarted` only. |
+
+| `type` | When |
+| --- | --- |
+| `deadlineWarning` | `settings.warningMinutes` before the deadline of a mandatory task that is not done (once per occurrence; `0` = never). |
+| `overdue` | A mandatory task's deadline has passed (once per occurrence). |
+| `rejected` | A parent rejected a completion (any task), with the optional reason. |
+| `lockStarted` | A lock started (the tablet was used while a lock was pending). |
+| `forgotten` | A lock ran out and its task is still not done: it gives no money today. |
+
+While the child is paused only `rejected` can occur.
+
 ## Actions
 
 `POST /api/lommepenge/action` (signed), body:
@@ -300,14 +428,15 @@ On success the response is `200` with the **new state** (exactly as
 updates the screen from this response only; on an error or no connection it
 changes nothing locally.
 
-A child's tablet may only send `complete_task` for its own child; everything
-else gives `403 forbidden_action`.
+A child's tablet may only send `complete_task` and `report_use` for its own
+child; everything else gives `403 forbidden_action`. `report_use` is only for
+a child's tablet (`403` from the family screen and parents' phones).
 
 | `type` | `payload` | Notes |
 | --- | --- | --- |
 | `complete_task` | `taskId`, `childId`, `completionId` | Idempotent, see below. HA's clock decides the time and `late`. |
 | `approve_completion` | `completionId` | Parent. |
-| `reject_completion` | `completionId` | Parent. |
+| `reject_completion` | `completionId`, `reason` (optional text, max 500 characters) | Parent. The child gets a `rejected` notification with the reason; a mandatory task causes a lock. |
 | `create_task` | `id`, `title`, `amountOre`, `recurrence`, `mandatory`, `description`, `activeWeekdays`, `assignedChildIds`, `startTime`, `dueTime`, `showInCalendar` | `title` and integer `amountOre` ≥ 0 required. Unknown `recurrence` → `once`. `once` ignores `activeWeekdays`. |
 | `update_task` | `id` + the same fields | `title`, `amountOre` required. A missing key keeps the old value; explicit `null` clears it (`activeWeekdays`, `assignedChildIds`, `startTime`, `dueTime`). `description` is always replaced. |
 | `delete_task` | `id` | Deactivates the task (history keeps it). |
@@ -316,8 +445,13 @@ else gives `403 forbidden_action`.
 | `delete_child` | `id` | |
 | `adjust_balance` | `id`, `childId`, `amountOre` (may be negative), `note` (required) | |
 | `mark_paid_out` | `childId` | Balance becomes 0. |
-| `set_setting` | `key`, `value` | Keys: `defaultDueTime` (`"HH:MM"`), `latePauseMinutes` (0–240), `warningMinutes` (0–600), `winterFromWeek`/`winterToWeek` (1–53). |
-| `suspend_restriction` | `childId` | Old restriction model; will be replaced by the locks. |
+| `set_setting` | `key`, `value` | Keys: `defaultDueTime` (`"HH:MM"`), `lockMinutes` (1–480), `latePauseMinutes` (0–240), `warningMinutes` (0–600), `winterFromWeek`/`winterToWeek` (1–53). |
+| `report_use` | `childId`, `event` (`screen_on` or `user_present`), `at` (optional, the tablet's Unix time in seconds) | **Child's tablet only.** Send on Android's `SCREEN_ON` and `USER_PRESENT`. Starts a pending lock now (by HA's clock; `at` is only recorded). Without a pending lock nothing happens. Returns the new state, so the countdown can start at once. |
+| `lift_lock` | `childId` | Parent. Clears the child's pending or running lock. |
+| `set_pause` | `childId`, `paused` (bool), `until` (optional `"YYYY-MM-DD"`, after today) | Parent. `paused: true` pauses (or changes `until`; missing/`null` = no end date) and lifts the lock; `paused: false` resumes now. |
+
+`suspend_restriction` (`childId`) from the old restriction model still works
+as an alias for `lift_lock`; do not use it in new code.
 
 ### Idempotency (retries)
 
@@ -336,7 +470,9 @@ The app may resend an action after a timeout or lost response. HA guarantees:
   do not create duplicates (`create_task` replaces the fields; the original
   creation time is kept). Always send an app-made `id`.
 - `delete_task`, `delete_child`, `update_task`, `rename_child`,
-  `mark_paid_out` and `set_setting` can safely be repeated.
+  `mark_paid_out`, `set_setting`, `lift_lock`, `set_pause` and `report_use`
+  can safely be repeated (a repeated `report_use` does not restart or extend a
+  running lock).
 
 ### Action errors
 
@@ -345,7 +481,7 @@ All `400` with the `code` below (text in `error`):
 | `code` | When |
 | --- | --- |
 | `unknown_action` | Unknown `type`. |
-| `missing_field` | A required field is missing/invalid (e.g. `amountOre`, `completionId` over 100 characters). |
+| `missing_field` | A required field is missing/invalid (e.g. `amountOre`, `completionId` over 100 characters, `report_use` `event`, `set_pause` `paused`). |
 | `missing_id`, `missing_child_id`, `missing_task`, `missing_completion`, `missing_setting` | The named field is missing. |
 | `task_title_required`, `negative_amount`, `child_name_required`, `adjustment_note_required` | Validation. |
 | `task_not_found` | The task does not exist or is deleted/missed. |
@@ -354,6 +490,7 @@ All `400` with the `code` below (text in `error`):
 | `completion_not_found`, `completion_already_handled` | See idempotency. |
 | `child_not_found` | Unknown child. |
 | `invalid_time`, `setting_out_of_range`, `unknown_setting` | `set_setting`. |
+| `invalid_pause_until` | `set_pause` with an `until` that is not a date after today. |
 
 ## History
 
@@ -366,7 +503,7 @@ Query parameters (all optional):
 | --- | --- |
 | `before` | `YYYY-MM-DD`, exclusive end of the page. Default: tomorrow (the page includes today). |
 | `childId` | Only this child. A child's tablet always gets only its own child; asking for another child gives `403 forbidden_action`. |
-| `types` | Comma-separated filter, e.g. `approved,rejected`. Allowed: `approved`, `rejected`, `adjustment`, `missed`. An unknown type gives `400 invalid_request`. |
+| `types` | Comma-separated filter, e.g. `approved,rejected`. Allowed: `approved`, `rejected`, `adjustment`, `missed`, `lock`. An unknown type gives `400 invalid_request`. |
 
 Remember that the query string is part of the signed path.
 
@@ -404,9 +541,14 @@ Response `200`:
 | `type` | `at` | Fields |
 | --- | --- | --- |
 | `approved` | when it was approved | task fields, `amountOre`, `completedAt`, `late` |
-| `rejected` | when it was rejected (older data: when it was done) | as `approved`; gave no money |
+| `rejected` | when it was rejected (older data: when it was done) | as `approved`; gave no money; `note` = the parent's reason (or `null`) |
 | `adjustment` | when it was made | `amountOre` (signed), `note`; `taskId`/`taskTitle`/`completedAt` are `null` |
 | `missed` | the missed deadline | task fields, `amountOre` it would have given; `completedAt` is `null` |
+| `lock` | when the lock started, ended or was lifted | `lockEvent` (`started`, `ended` or `lifted`), `minutes`, `reasons` (as in [Locks](#locks)), `note` = the reason text; `taskId`/`taskTitle`/`completedAt` are `null`, `amountOre` is `0` |
+
+A lock that ran gives two items (`started`, then `ended` or `lifted`); a lock
+lifted while pending gives only `lifted`. Pending locks that lapsed are not
+in the history. Lock item ids are `<lockId>-<lockEvent>`.
 
 `childName`/`taskTitle` are the current names (empty string / `null` if the
 child or task no longer exists). Pending completions are not history (they
@@ -417,11 +559,3 @@ are in `approvals` and the task entries). There is no payout history.
 `GET /api/lommepenge/apk` (signed) streams the APK described by
 `state.appUpdate`. Check its SHA-256 against `appUpdate.sha256` before
 installing.
-
-## Coming later
-
-These will be added to the payloads without breaking the fields above:
-
-- a per-child `lock` object in `state.children[]` (locks, Del H4);
-- history type `lock` (and the `types` filter value `lock`);
-- notifications for the child (Del H3).
