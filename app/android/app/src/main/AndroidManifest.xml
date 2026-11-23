@@ -9,6 +9,12 @@
     <!-- The app installs new versions fetched from Home Assistant itself -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Child's tablet: the background service that polls Home Assistant,
+         reports when the tablet is used (starts a pending lock) and shows the
+         child's notifications. It starts again after a reboot. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- allowBackup=false: a reinstall must give a completely empty app.
          Otherwise Android's auto backup would restore e.g. a child tablet's
@@ -46,6 +52,26 @@
                 <data android:scheme="lommepenge" android:host="pair" />
             </intent-filter>
         </activity>
+        <!-- specialUse: none of the other foreground service types fits a
+             parental-control service that must keep running (dataSync is
+             limited to 6 hours a day and may not start at boot on Android
+             15+). The app is installed from Home Assistant, not Google Play. -->
+        <service
+            android:name=".LockService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Parental control: keeps a child's tablet in sync with the family's Home Assistant (screen-use reports, locks and the child's notifications)" />
+        </service>
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

@@ -28,6 +28,8 @@ import kotlin.concurrent.thread
  *   itself)
  * - a notification when there is a new version (texts in the app's language
  *   come from Flutter)
+ * - starting/stopping the child's tablet's background service ([LockService])
+ *   and telling Flutter when that service has changed something in HA
  */
 class MainActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
@@ -69,6 +71,17 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                     "discoverHa" -> HaDiscovery(this@MainActivity) { result.success(it) }.start()
+                    "childService" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        val texts = call.argument<Map<String, String>>("texts") ?: emptyMap()
+                        if (enabled) askForNotificationPermission()
+                        try {
+                            LockService.configure(this@MainActivity, enabled, texts)
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("childService", e.message, null)
+                        }
+                    }
                     "notify" -> {
                         notifyUpdate(
                             call.argument<String>("title")!!,
@@ -80,6 +93,21 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        }
+        LockService.stateListener = { channel?.invokeMethod("refresh", null) }
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        LockService.stateListener = null
+        super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    /** Android 13+: notifications need the user's permission. */
+    private fun askForNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
     }
 
