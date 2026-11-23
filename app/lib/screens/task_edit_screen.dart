@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../l10n/l10n.dart';
 import '../models/task.dart';
 import '../providers/app_state.dart';
+import '../widgets/action_feedback.dart';
 
-/// Form to create a new task, or edit an existing one if [task] is set.
+/// Form to create a new task, or edit an existing one if [task] is set. The
+/// screen closes when Home Assistant has confirmed the change; on an error it
+/// stays open, so "Save" can simply be tapped again.
 class TaskEditScreen extends StatefulWidget {
   final Task? task;
   const TaskEditScreen({super.key, this.task});
@@ -38,6 +42,10 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
   late bool _showInCalendar;
 
   bool _saving = false;
+
+  /// The new task's id, made once for this form: saving again after an error
+  /// sends the same id, so HA does not create the task twice.
+  final String _newTaskId = const Uuid().v4();
 
   bool get _isEditing => widget.task != null;
 
@@ -147,44 +155,26 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
     final weekdaysToSave =
         _recurrence == Recurrence.once ? null : _activeWeekdays;
 
-    try {
-      if (_isEditing) {
-        await appState.editTask(
-          widget.task!.id,
-          title: _titleController.text.trim(),
-          description: description.isEmpty ? null : description,
-          amountOre: amountOre,
-          recurrence: _recurrence,
-          mandatory: _mandatory,
-          activeWeekdays: weekdaysToSave,
-          assignedChildIds: _assignedChildIds,
-          startTime: _startTime,
-          dueTime: _dueTime,
-          showInCalendar: _showInCalendar,
-        );
-      } else {
-        await appState.createTask(
-          title: _titleController.text.trim(),
-          description: description.isEmpty ? null : description,
-          amountOre: amountOre,
-          recurrence: _recurrence,
-          mandatory: _mandatory,
-          activeWeekdays: weekdaysToSave,
-          assignedChildIds: _assignedChildIds,
-          startTime: _startTime,
-          dueTime: _dueTime,
-          showInCalendar: _showInCalendar,
-        );
-      }
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+    final task = Task(
+      id: widget.task?.id ?? _newTaskId,
+      title: _titleController.text.trim(),
+      description: description.isEmpty ? null : description,
+      amountOre: amountOre,
+      recurrence: _recurrence,
+      mandatory: _mandatory,
+      activeWeekdays: weekdaysToSave,
+      assignedChildIds: _assignedChildIds,
+      startTime: _startTime,
+      dueTime: _dueTime,
+      showInCalendar: _showInCalendar,
+    );
+    final saved = await runAction(
+      context,
+      () => _isEditing ? appState.editTask(task) : appState.createTask(task),
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (saved) Navigator.of(context).pop();
   }
 
   @override

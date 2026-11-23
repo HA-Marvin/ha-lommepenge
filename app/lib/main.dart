@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
-import 'db/database_helper.dart';
 import 'l10n/l10n.dart';
 import 'providers/app_state.dart';
-import 'repositories/task_repository.dart';
 import 'screens/child_home_screen.dart';
 import 'screens/child_tablet_home_screen.dart';
 import 'screens/connect_screen.dart';
@@ -16,13 +14,10 @@ import 'widgets/parent_mode_timeout.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Must happen BEFORE runApp/anything touches the database - see
-  // DatabaseHelper.initializeFactory().
-  DatabaseHelper.initializeFactory();
   runApp(const LommepengeApp());
 }
 
-/// Root widget. Builds [AppState] (reads local settings + database) and makes
+/// Root widget. Builds [AppState] (reads the local settings) and makes
 /// sure [ChangeNotifierProvider] sits OUTSIDE [MaterialApp] - i.e. above the
 /// app's only [Navigator]. That is necessary for all screens, including those
 /// opened with `Navigator.push` (e.g. PIN screens and parent mode), to reach
@@ -48,8 +43,7 @@ class _LommepengeAppState extends State<LommepengeApp> {
 
   Future<AppState> _build() async {
     final settings = await SettingsService.create();
-    final repository = TaskRepository(settings: settings);
-    final appState = AppState(settings: settings, repository: repository);
+    final appState = AppState(settings: settings);
     await appState.initialize();
     return appState;
   }

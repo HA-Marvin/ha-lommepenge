@@ -3,21 +3,22 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/l10n.dart';
-import '../models/balance_adjustment.dart';
 import '../models/child.dart';
-import '../models/completion.dart';
 import '../models/task.dart';
 import '../providers/app_state.dart';
+import '../widgets/action_feedback.dart';
 import '../widgets/amount_text.dart';
 import 'children_screen.dart';
+import 'history_screen.dart';
 import 'settings_screen.dart';
 import 'task_edit_screen.dart';
 
 /// Parent mode: tasks, children, approvals, overview/balance, history and
-/// settings - gathered in tabs. New devices are added in Home Assistant, and
-/// the family's data is part of HA's backups. Requires that the user has
-/// already entered the correct PIN (handled by [PinEntryScreen] before this
-/// screen is opened).
+/// settings - gathered in tabs. Everything shown comes from Home Assistant's
+/// latest state (the parent part of it), and every change is an action HA
+/// confirms (see `AppState`). New devices are added in Home Assistant.
+/// Requires that the user has already entered the correct PIN (handled by
+/// [PinEntryScreen] before this screen is opened).
 class ParentHomeScreen extends StatelessWidget {
   const ParentHomeScreen({super.key});
 
@@ -58,7 +59,8 @@ class ParentHomeScreen extends StatelessWidget {
             ChildrenScreen(),
             _ApprovalsTab(),
             _OverviewTab(),
-            _HistoryTab(),
+            // Fetched from HA when the tab is shown, dropped when it is left.
+            HistoryScreen(embedded: true),
             SettingsTabContent(),
           ],
         ),
@@ -83,31 +85,35 @@ class _TasksTab extends StatelessWidget {
               itemCount: tasks.length,
               itemBuilder: (context, index) {
                 final task = tasks[index];
+                final busy = appState.isBusy(AppState.taskKey(task.id));
                 return ListTile(
                   title: Text(task.title),
                   subtitle: Text([
                     formatAmount(l10n, task.amountOre, appState.currency),
                     task.recurrence.label(l10n),
+                    if (task.mandatory) l10n.mustBeDone,
                     if (task.dueTime != null) l10n.deadlineAt(task.dueTime!),
                     if (task.showInCalendar) l10n.inCalendar,
                   ].join(' · ')),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined),
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => TaskEditScreen(task: task),
-                          ),
+                  trailing: busy
+                      ? const BusyIndicator()
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => TaskEditScreen(task: task),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () => _confirmDelete(context, task),
+                            ),
+                          ],
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () => _confirmDelete(context, task),
-                      ),
-                    ],
-                  ),
                 );
               },
             ),
@@ -139,7 +145,8 @@ class _TasksTab extends StatelessWidget {
       ),
     );
     if (confirmed == true && context.mounted) {
-      await context.read<AppState>().deleteTask(task.id);
+      final appState = context.read<AppState>();
+      await runAction(context, () => appState.deleteTask(task.id));
     }
   }
 }
@@ -151,26 +158,23 @@ class _ApprovalsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final l10n = context.l10n;
-    final pending = appState.completions
-        .where((c) => c.status == CompletionStatus.pending)
-        .toList()
-      ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
+    final pending = appState.approvals;
 
     if (pending.isEmpty) {
       return Center(child: Text(l10n.noPendingApprovals));
     }
 
-    final tasksById = {for (final t in appState.tasks) t.id: t};
-    final childrenById = appState.childrenById;
-
     return ListView.builder(
       itemCount: pending.length,
       itemBuilder: (context, index) {
-        final completion = pending[index];
-        final task = tasksById[completion.taskId];
-        final title = task?.title ?? l10n.unknownTask;
+        final approval = pending[index];
+        final title =
+            approval.taskTitle.isEmpty ? l10n.unknownTask : approval.taskTitle;
         final childName =
-            childrenById[completion.childId]?.name ?? l10n.unknownChild;
+            approval.childName.isEmpty ? l10n.unknownChild : approval.childName;
+        final completedAt = approval.completedAt;
+        final busy =
+            appState.isBusy(AppState.completionKey(approval.completionId));
 
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -178,29 +182,35 @@ class _ApprovalsTab extends StatelessWidget {
             title: Text(title),
             subtitle: Text([
               childName,
-              formatAmount(l10n, completion.amountAtCompletionOre, appState.currency),
-              formatDateTime(l10n, completion.completedAt),
-              if (completion.late) l10n.late,
+              formatAmount(l10n, approval.amountOre, appState.currency),
+              if (completedAt != null) formatDateTime(l10n, completedAt),
+              if (approval.late) l10n.late,
             ].join(' · ')),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.red),
-                  tooltip: l10n.reject,
-                  onPressed: () => context
-                      .read<AppState>()
-                      .rejectCompletion(completion.id),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.check, color: Colors.green),
-                  tooltip: l10n.approve,
-                  onPressed: () => context
-                      .read<AppState>()
-                      .approveCompletion(completion.id),
-                ),
-              ],
-            ),
+            trailing: busy
+                ? const BusyIndicator()
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.red),
+                        tooltip: l10n.reject,
+                        onPressed: () => runAction(
+                          context,
+                          () => appState
+                              .rejectCompletion(approval.completionId),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.check, color: Colors.green),
+                        tooltip: l10n.approve,
+                        onPressed: () => runAction(
+                          context,
+                          () => appState
+                              .approveCompletion(approval.completionId),
+                        ),
+                      ),
+                    ],
+                  ),
           ),
         );
       },
@@ -215,6 +225,7 @@ class _OverviewTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final children = appState.children;
+    final adjusting = appState.isBusy(AppState.adjustKey);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -225,12 +236,18 @@ class _OverviewTab extends StatelessWidget {
         ],
         const SizedBox(height: 12),
         OutlinedButton.icon(
-          icon: const Icon(Icons.tune),
+          icon: adjusting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.tune),
           label: Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Text(context.l10n.adjustBalance),
           ),
-          onPressed: children.isEmpty
+          onPressed: children.isEmpty || adjusting
               ? null
               : () => _openAdjustBalanceDialog(context, children),
         ),
@@ -349,30 +366,18 @@ class _OverviewTab extends StatelessWidget {
     if (result == true && context.mounted) {
       final amountOre = parseKrToOre(amountController.text)!;
       final note = noteController.text.trim();
-      try {
-        await appState.adjustBalance(
+      final l10n = context.l10n;
+      await runAction(
+        context,
+        () => appState.adjustBalance(
           amountOre: amountOre,
           note: note,
           childId: selectedChildId,
-        );
-        if (context.mounted) {
-          final l10n = context.l10n;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                l10n.balanceAdjustedBy(
-                  formatAmount(l10n, amountOre, appState.currency),
-                ),
-              ),
-            ),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('$e')));
-        }
-      }
+        ),
+        success: l10n.balanceAdjustedBy(
+          formatAmount(l10n, amountOre, appState.currency),
+        ),
+      );
     }
   }
 }
@@ -385,8 +390,8 @@ class _ChildOverviewCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final balance = appState.currentBalanceOreFor(child.id);
-    final paidOut = appState.settings.paidOutOreFor(child.id);
+    final balance = child.balanceOre;
+    final busy = appState.isBusy(AppState.payoutKey(child.id));
 
     return Card(
       child: Padding(
@@ -407,18 +412,24 @@ class _ChildOverviewCard extends StatelessWidget {
               formatAmount(l10n, balance, appState.currency),
               style: Theme.of(context).textTheme.headlineSmall,
             ),
-            const SizedBox(height: 12),
-            Text(l10n.paidOutTotal,
-                style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 4),
             Text(
-              formatAmount(l10n, paidOut, appState.currency),
-              style: Theme.of(context).textTheme.bodyLarge,
+              l10n.thisWeekAmount(
+                formatAmount(l10n, child.earnedThisWeekOre, appState.currency),
+              ),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
-              icon: const Icon(Icons.payments_outlined),
+              icon: busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.payments_outlined),
               label: Text(l10n.markAsPaidOut),
-              onPressed: balance <= 0
+              onPressed: balance <= 0 || busy
                   ? null
                   : () => _confirmPayout(context, child),
             ),
@@ -429,19 +440,16 @@ class _ChildOverviewCard extends StatelessWidget {
   }
 }
 
-/// Confirms and performs a payout for one specific child. A top-level
-/// function (not an instance method) as it uses no instance state, and is
-/// used from `_ChildOverviewCard`'s button per child.
+/// Confirms and performs a payout for one specific child.
 Future<void> _confirmPayout(BuildContext context, Child child) async {
   final appState = context.read<AppState>();
-  final balance = appState.currentBalanceOreFor(child.id);
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(ctx.l10n.markAsPaidOut),
       content: Text(
         ctx.l10n.confirmPayout(
-          formatAmount(ctx.l10n, balance, appState.currency),
+          formatAmount(ctx.l10n, child.balanceOre, appState.currency),
           child.name,
         ),
       ),
@@ -457,96 +465,7 @@ Future<void> _confirmPayout(BuildContext context, Child child) async {
       ],
     ),
   );
-  if (confirmed == true) {
-    await appState.markPaidOut(childId: child.id);
-  }
-}
-
-/// Common type to be able to sort completions and balance adjustments
-/// interleaved by date in the history tab.
-class _HistoryEntry {
-  final DateTime date;
-  final Widget tile;
-  const _HistoryEntry({required this.date, required this.tile});
-}
-
-class _HistoryTab extends StatelessWidget {
-  const _HistoryTab();
-
-  @override
-  Widget build(BuildContext context) {
-    final appState = context.watch<AppState>();
-    final l10n = context.l10n;
-    final approved = appState.completions
-        .where((c) => c.status == CompletionStatus.approved)
-        .toList();
-    final adjustments = appState.balanceAdjustments;
-
-    if (approved.isEmpty && adjustments.isEmpty) {
-      return Center(child: Text(l10n.noCompletedTasksYet));
-    }
-
-    final tasksById = {for (final t in appState.tasks) t.id: t};
-    final childrenById = appState.childrenById;
-
-    final entries = <_HistoryEntry>[
-      for (final completion in approved)
-        _HistoryEntry(
-          date: completion.completedAt,
-          tile: ListTile(
-            leading: const Icon(Icons.check_circle, color: Colors.green),
-            title: Text(tasksById[completion.taskId]?.title ?? l10n.unknownTask),
-            subtitle: Text(
-              '${childrenById[completion.childId]?.name ?? l10n.unknownChild} · '
-              '${formatDate(l10n, completion.completedAt)}',
-            ),
-            trailing: Text(
-              formatAmount(
-                l10n,
-                completion.amountAtCompletionOre,
-                appState.currency,
-              ),
-            ),
-          ),
-        ),
-      for (final adjustment in adjustments)
-        _HistoryEntry(
-          date: adjustment.createdAt,
-          tile: _AdjustmentTile(
-            adjustment: adjustment,
-            childName:
-                childrenById[adjustment.childId]?.name ?? l10n.unknownChild,
-          ),
-        ),
-    ]..sort((a, b) => b.date.compareTo(a.date));
-
-    return ListView.builder(
-      itemCount: entries.length,
-      itemBuilder: (context, index) => entries[index].tile,
-    );
-  }
-}
-
-class _AdjustmentTile extends StatelessWidget {
-  final BalanceAdjustment adjustment;
-  final String childName;
-  const _AdjustmentTile({required this.adjustment, required this.childName});
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final currency = context.watch<AppState>().currency;
-    final isPositive = adjustment.amountOre >= 0;
-    final sign = isPositive ? '+' : '';
-    final color = isPositive ? Colors.green[700] : Colors.red[700];
-    return ListTile(
-      leading: const Icon(Icons.tune, color: Colors.blueGrey),
-      title: Text(l10n.balanceAdjustment(adjustment.note)),
-      subtitle: Text('$childName · ${formatDate(l10n, adjustment.createdAt)}'),
-      trailing: Text(
-        '$sign${formatAmount(l10n, adjustment.amountOre, currency)}',
-        style: TextStyle(color: color, fontWeight: FontWeight.bold),
-      ),
-    );
+  if (confirmed == true && context.mounted) {
+    await runAction(context, () => appState.markPaidOut(childId: child.id));
   }
 }

@@ -109,8 +109,12 @@ class PairResult {
 
 /// Response from a signed request.
 class HaResult {
-  final Map<String, dynamic>? state;
+  /// The JSON answer: the state (`/state`, `/action`) or a history page.
+  final Map<String, dynamic>? data;
   final String? errorMessage;
+
+  /// HA's stable error `code` (e.g. `task_not_available`), if it sent one.
+  final String? code;
 
   /// HA no longer knows the device (removed under "Devices" in HA), or the
   /// device's key is no longer valid. The ONLY case where the app forgets the
@@ -118,19 +122,24 @@ class HaResult {
   /// [HaClient.clockOffset]).
   final bool unauthorized;
 
-  /// HA could not be reached - the action can be sent again later.
+  /// HA could not be reached, did not answer in time or did not answer with
+  /// JSON - "No connection to Home Assistant - try again". HA may still have
+  /// performed an action, so a retry must be idempotent (see
+  /// docs/app-api.md).
   final bool offline;
 
-  const HaResult.ok(this.state)
+  const HaResult.ok(this.data)
       : errorMessage = null,
+        code = null,
         unauthorized = false,
         offline = false;
 
   const HaResult.failure(
     this.errorMessage, {
+    this.code,
     this.unauthorized = false,
     this.offline = false,
-  }) : state = null;
+  }) : data = null;
 
   bool get success => errorMessage == null;
 }
@@ -215,6 +224,38 @@ class HaClient {
 
   Future<HaResult> fetchState(HaConnection connection) =>
       _send(connection, 'GET', '$apiPrefix/state', const []);
+
+  /// One page of history (30 days before [before], exclusive; default up to
+  /// and including today). The query string is built here, so the bytes that
+  /// are signed are exactly the bytes sent (the values only contain
+  /// `A-Z a-z 0-9 - _ ,`).
+  Future<HaResult> fetchHistory(
+    HaConnection connection, {
+    String? before,
+    String? childId,
+    List<String>? types,
+  }) =>
+      _send(
+        connection,
+        'GET',
+        historyPath(before: before, childId: childId, types: types),
+        const [],
+      );
+
+  /// The signed path of a history request, e.g.
+  /// `/api/lommepenge/history?before=2026-10-25&childId=emma`.
+  static String historyPath({
+    String? before,
+    String? childId,
+    List<String>? types,
+  }) {
+    final query = [
+      if (before != null) 'before=$before',
+      if (childId != null) 'childId=$childId',
+      if (types != null && types.isNotEmpty) 'types=${types.join(',')}',
+    ].join('&');
+    return query.isEmpty ? '$apiPrefix/history' : '$apiPrefix/history?$query';
+  }
 
   Future<HaResult> sendAction(
     HaConnection connection,
@@ -302,10 +343,17 @@ class HaClient {
     bool retryOnClockSkew = true,
   }) async {
     final client = HttpClient()..connectionTimeout = timeout;
+    // [path] is the request target exactly as signed, possibly with a query.
+    final queryStart = path.indexOf('?');
+    final uri = queryStart < 0
+        ? connection.baseUrl.replace(path: path)
+        : connection.baseUrl.replace(
+            path: path.substring(0, queryStart),
+            query: path.substring(queryStart + 1),
+          );
     try {
-      final request = await client
-          .openUrl(method, connection.baseUrl.replace(path: path))
-          .timeout(timeout);
+      final request =
+          await client.openUrl(method, uri).timeout(timeout);
       request.headers.contentType = ContentType.json;
       signedHeaders(connection, method, path, body)
           .forEach(request.headers.set);
@@ -336,21 +384,30 @@ class HaClient {
         }
         return HaResult.failure(
           decoded['error'] as String? ?? l10n.deviceNoLongerConnected,
+          code: code is String ? code : null,
           // An older HA without `code`: as before, a 401 means the device
           // is no longer connected.
           unauthorized: code == null || revokedCodes.contains(code),
         );
       }
-      if (response.statusCode != 200) {
-        return HaResult.failure(
-          decoded['error'] as String? ?? l10n.haError('${response.statusCode}'),
-        );
+      final error = decoded['error'];
+      if (response.statusCode != 200 && error is String) {
+        // HA's own refusal (e.g. `task_not_available`), in the app's language.
+        final code = decoded['code'];
+        return HaResult.failure(error, code: code is String ? code : null);
+      }
+      if (response.statusCode != 200 || decoded.isEmpty) {
+        // Not an answer from the integration (plain text "Lommepenge is not
+        // set up", a proxy error page ...): treated as no connection.
+        return HaResult.failure(l10n.noConnectionTryAgain, offline: true);
       }
       return HaResult.ok(decoded);
     } on SocketException {
-      return HaResult.failure(l10n.noConnectionCheckNetwork, offline: true);
+      return HaResult.failure(l10n.noConnectionTryAgain, offline: true);
     } on TimeoutException {
-      return HaResult.failure(l10n.haTimeoutRetry, offline: true);
+      return HaResult.failure(l10n.noConnectionTryAgain, offline: true);
+    } on HttpException {
+      return HaResult.failure(l10n.noConnectionTryAgain, offline: true);
     } catch (e) {
       return HaResult.failure(l10n.unexpectedError('$e'));
     } finally {

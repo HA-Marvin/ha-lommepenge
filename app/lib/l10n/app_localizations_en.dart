@@ -786,4 +786,55 @@ class AppLocalizationsEn extends AppLocalizations {
   String errUnknownSetting(Object key) {
     return 'Unknown setting: $key';
   }
+
+  @override
+  String get noConnectionTryAgain =>
+      'No connection to Home Assistant – try again';
+
+  @override
+  String get tryAgain => 'Try again';
+
+  @override
+  String get statusOverdue => 'Overdue - can still be done';
+
+  @override
+  String statusUpcomingOn(Object date) {
+    return 'Can be done $date';
+  }
+
+  @override
+  String deadlineLabel(Object time) {
+    return 'Deadline $time';
+  }
+
+  @override
+  String get history => 'History';
+
+  @override
+  String get showOlder => 'Show older';
+
+  @override
+  String get historyEmpty => 'Nothing in this period.';
+
+  @override
+  String historyPeriod(Object from, Object to) {
+    return '$from – $to';
+  }
+
+  @override
+  String get historyApproved => 'Approved';
+
+  @override
+  String get historyRejected => 'Rejected';
+
+  @override
+  String get historyMissed => 'Missed';
+
+  @override
+  String get historyAdjustment => 'Adjustment';
+
+  @override
+  String doneAt(Object time) {
+    return 'done $time';
+  }
 }

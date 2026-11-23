@@ -784,4 +784,55 @@ class AppLocalizationsDa extends AppLocalizations {
   String errUnknownSetting(Object key) {
     return 'Ukendt indstilling: $key';
   }
+
+  @override
+  String get noConnectionTryAgain =>
+      'Ingen forbindelse til Home Assistant – prøv igen';
+
+  @override
+  String get tryAgain => 'Prøv igen';
+
+  @override
+  String get statusOverdue => 'For sent - kan stadig laves';
+
+  @override
+  String statusUpcomingOn(Object date) {
+    return 'Kan laves $date';
+  }
+
+  @override
+  String deadlineLabel(Object time) {
+    return 'Frist $time';
+  }
+
+  @override
+  String get history => 'Historik';
+
+  @override
+  String get showOlder => 'Vis ældre';
+
+  @override
+  String get historyEmpty => 'Intet i denne periode.';
+
+  @override
+  String historyPeriod(Object from, Object to) {
+    return '$from – $to';
+  }
+
+  @override
+  String get historyApproved => 'Godkendt';
+
+  @override
+  String get historyRejected => 'Afvist';
+
+  @override
+  String get historyMissed => 'Ikke nået';
+
+  @override
+  String get historyAdjustment => 'Justering';
+
+  @override
+  String doneAt(Object time) {
+    return 'lavet $time';
+  }
 }

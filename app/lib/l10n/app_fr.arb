@@ -232,5 +232,19 @@
   "errUnknownAction": "Action inconnue : {type}",
   "errInvalidTime": "Heure non valide pour {key} : {value}",
   "errSettingRange": "{key} doit être compris entre {min} et {max} : {value}",
-  "errUnknownSetting": "Paramètre inconnu : {key}"
+  "errUnknownSetting": "Paramètre inconnu : {key}",
+  "noConnectionTryAgain": "Pas de connexion à Home Assistant – réessaie",
+  "tryAgain": "Réessayer",
+  "statusOverdue": "En retard - peut encore être faite",
+  "statusUpcomingOn": "Possible le {date}",
+  "deadlineLabel": "Échéance {time}",
+  "history": "Historique",
+  "showOlder": "Afficher plus ancien",
+  "historyEmpty": "Rien pendant cette période.",
+  "historyPeriod": "{from} – {to}",
+  "historyApproved": "Approuvée",
+  "historyRejected": "Refusée",
+  "historyMissed": "Manquée",
+  "historyAdjustment": "Ajustement",
+  "doneAt": "faite {time}"
 }

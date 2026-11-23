@@ -5,15 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:lommepenge_app/providers/app_state.dart';
-import 'package:lommepenge_app/repositories/task_repository.dart';
 import 'package:lommepenge_app/services/settings_service.dart';
 import 'package:lommepenge_app/widgets/parent_mode_timeout.dart';
 
 Future<AppState> _appState(String role) async {
   SharedPreferences.setMockInitialValues({'role': role});
   final settings = await SettingsService.create();
-  return AppState(
-      settings: settings, repository: TaskRepository(settings: settings));
+  return AppState(settings: settings);
 }
 
 /// A start screen with a button that opens a "parent mode" screen, wired up

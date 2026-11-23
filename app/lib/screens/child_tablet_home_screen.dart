@@ -7,12 +7,16 @@ import '../providers/app_state.dart';
 import '../widgets/child_task_list.dart';
 import '../widgets/sync_indicator.dart';
 import '../widgets/update_banner.dart';
+import 'history_screen.dart';
 import 'language_screen.dart';
 
-/// The child's tablet: only that child's balance and tasks. There is no
-/// lock/parent button - the parent part does not exist on this device, and
-/// Home Assistant refuses anything other than "mark as done" for the child
-/// itself anyway. The language can be changed from the app bar.
+/// The child's tablet: only that child's balance and tasks, as Home
+/// Assistant sends them. There is no lock/parent button - the parent part
+/// does not exist on this device, and Home Assistant refuses anything other
+/// than "mark as done" for the child itself anyway. The child's own history
+/// and the language can be opened from the app bar. (HA's state is fetched
+/// every 30 seconds and when the app comes to the foreground - see
+/// `AppState`.)
 class ChildTabletHomeScreen extends StatefulWidget {
   const ChildTabletHomeScreen({super.key});
 
@@ -20,24 +24,11 @@ class ChildTabletHomeScreen extends StatefulWidget {
   State<ChildTabletHomeScreen> createState() => _ChildTabletHomeScreenState();
 }
 
-class _ChildTabletHomeScreenState extends State<ChildTabletHomeScreen>
-    with WidgetsBindingObserver {
+class _ChildTabletHomeScreenState extends State<ChildTabletHomeScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _sync());
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _sync();
   }
 
   Future<void> _sync() async {
@@ -56,6 +47,15 @@ class _ChildTabletHomeScreenState extends State<ChildTabletHomeScreen>
         title: Text(child == null ? 'Lommepenge' : l10n.hiChild(child.name)),
         actions: [
           SyncIndicator(appState: appState),
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: l10n.history,
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => HistoryScreen(childId: appState.boundChildId),
+              ),
+            ),
+          ),
           const LanguageButton(),
         ],
       ),
@@ -79,7 +79,6 @@ class _ChildTabletHomeScreenState extends State<ChildTabletHomeScreen>
   }
 
   Widget _buildContent(BuildContext context, AppState appState, Child child) {
-    final tasks = tasksForChild(appState, child.id);
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 720),
@@ -96,11 +95,7 @@ class _ChildTabletHomeScreenState extends State<ChildTabletHomeScreen>
               ),
             ),
             const SizedBox(height: 8),
-            FollowUpBanner(
-              followUp: appState.followUpFor(child.id),
-              settings: appState.familySettings,
-            ),
-            if (tasks.isEmpty)
+            if (child.tasks.isEmpty)
               Padding(
                 padding: const EdgeInsets.all(32),
                 child: Text(
@@ -109,8 +104,7 @@ class _ChildTabletHomeScreenState extends State<ChildTabletHomeScreen>
                 ),
               )
             else
-              for (final task in tasks)
-                ChildTaskCard(appState: appState, child: child, task: task),
+              ...childTaskCards(context, appState, child),
           ],
         ),
       ),

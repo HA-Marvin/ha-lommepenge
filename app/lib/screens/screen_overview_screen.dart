@@ -10,7 +10,7 @@ import '../widgets/update_banner.dart';
 import 'child_home_screen.dart';
 
 /// The family screen's view: all children together, with one column per
-/// child (name, balance, the week's progress and the child's own tasks), so
+/// child (name, balance, earned this week and the child's own tasks), so
 /// each child can quickly find their own part. Parent mode is opened with the
 /// lock.
 ///
@@ -94,7 +94,6 @@ class _ChildColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tasks = tasksForChild(appState, child.id);
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border(
@@ -108,18 +107,13 @@ class _ChildColumn extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: ChildSummaryCard(appState: appState, child: child),
           ),
-          FollowUpBanner(
-            followUp: appState.followUpFor(child.id),
-            settings: appState.familySettings,
-          ),
-          if (tasks.isEmpty)
+          if (child.tasks.isEmpty)
             Padding(
               padding: const EdgeInsets.all(24),
               child: Text(context.l10n.noTasks, textAlign: TextAlign.center),
             )
           else
-            for (final task in tasks)
-              ChildTaskCard(appState: appState, child: child, task: task),
+            ...childTaskCards(context, appState, child),
         ],
       ),
     );

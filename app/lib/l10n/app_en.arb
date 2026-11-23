@@ -248,5 +248,22 @@
   "@errSettingRange": {
     "placeholders": {"key": {}, "min": {}, "max": {}, "value": {}}
   },
-  "errUnknownSetting": "Unknown setting: {key}"
+  "errUnknownSetting": "Unknown setting: {key}",
+  "noConnectionTryAgain": "No connection to Home Assistant – try again",
+  "tryAgain": "Try again",
+  "statusOverdue": "Overdue - can still be done",
+  "statusUpcomingOn": "Can be done {date}",
+  "deadlineLabel": "Deadline {time}",
+  "history": "History",
+  "showOlder": "Show older",
+  "historyEmpty": "Nothing in this period.",
+  "historyPeriod": "{from} – {to}",
+  "@historyPeriod": {
+    "placeholders": {"from": {}, "to": {}}
+  },
+  "historyApproved": "Approved",
+  "historyRejected": "Rejected",
+  "historyMissed": "Missed",
+  "historyAdjustment": "Adjustment",
+  "doneAt": "done {time}"
 }

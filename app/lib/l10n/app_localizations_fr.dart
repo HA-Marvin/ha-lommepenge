@@ -791,4 +791,55 @@ class AppLocalizationsFr extends AppLocalizations {
   String errUnknownSetting(Object key) {
     return 'Paramètre inconnu : $key';
   }
+
+  @override
+  String get noConnectionTryAgain =>
+      'Pas de connexion à Home Assistant – réessaie';
+
+  @override
+  String get tryAgain => 'Réessayer';
+
+  @override
+  String get statusOverdue => 'En retard - peut encore être faite';
+
+  @override
+  String statusUpcomingOn(Object date) {
+    return 'Possible le $date';
+  }
+
+  @override
+  String deadlineLabel(Object time) {
+    return 'Échéance $time';
+  }
+
+  @override
+  String get history => 'Historique';
+
+  @override
+  String get showOlder => 'Afficher plus ancien';
+
+  @override
+  String get historyEmpty => 'Rien pendant cette période.';
+
+  @override
+  String historyPeriod(Object from, Object to) {
+    return '$from – $to';
+  }
+
+  @override
+  String get historyApproved => 'Approuvée';
+
+  @override
+  String get historyRejected => 'Refusée';
+
+  @override
+  String get historyMissed => 'Manquée';
+
+  @override
+  String get historyAdjustment => 'Ajustement';
+
+  @override
+  String doneAt(Object time) {
+    return 'faite $time';
+  }
 }

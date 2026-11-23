@@ -6,25 +6,23 @@ import '../l10n/l10n.dart';
 import '../models/family_settings.dart';
 import '../models/task.dart';
 import '../providers/app_state.dart';
+import '../widgets/action_feedback.dart';
 import 'language_screen.dart';
 
 /// The "Settings" tab in parent mode: the app's language, the family's times
-/// and limits (the same values can be changed from Home Assistant), today's
-/// restrictions and the device's connection to Home Assistant.
+/// and limits (from HA's state; the same values can be changed from Home
+/// Assistant) and the device's connection to Home Assistant.
 class SettingsTabContent extends StatelessWidget {
   const SettingsTabContent({super.key});
 
-  Future<void> _save(
+  /// Sends the setting to HA; returns whether HA accepted it.
+  Future<bool> _save(
     BuildContext context,
     String key,
     Object value,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await context.read<AppState>().setFamilySetting(key, value);
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('$e')));
-    }
+  ) {
+    final appState = context.read<AppState>();
+    return runAction(context, () => appState.setFamilySetting(key, value));
   }
 
   Future<void> _editTime(
@@ -92,7 +90,9 @@ class SettingsTabContent extends StatelessWidget {
           leading: const Icon(Icons.schedule),
           title: Text(label),
           subtitle: Text(help),
-          trailing: Text(value, style: title),
+          trailing: appState.isBusy(AppState.settingKey(key))
+              ? const BusyIndicator()
+              : Text(value, style: title),
           onTap: () => _editTime(context, key, value),
         );
 
@@ -107,7 +107,9 @@ class SettingsTabContent extends StatelessWidget {
           leading: const Icon(Icons.timer_outlined),
           title: Text(label),
           subtitle: Text(help),
-          trailing: Text('$value $unit', style: title),
+          trailing: appState.isBusy(AppState.settingKey(key))
+              ? const BusyIndicator()
+              : Text('$value $unit', style: title),
           onTap: () => _editNumber(context, key, label, value),
         );
 
@@ -137,10 +139,6 @@ class SettingsTabContent extends StatelessWidget {
         ),
         timeTile('defaultDueTime', l10n.defaultDeadline, s.defaultDueTime,
             l10n.defaultDeadlineHelp),
-        timeTile('restrictionStart', l10n.restrictionFrom, s.restrictionStart,
-            l10n.restrictionFromHelp),
-        timeTile('restrictionEnd', l10n.restrictionUntil, s.restrictionEnd,
-            l10n.restrictionUntilHelp),
         numberTile('latePauseMinutes', l10n.pauseTime, s.latePauseMinutes,
             l10n.minutesUnit, l10n.pauseTimeHelp),
         numberTile('warningMinutes', l10n.warningBeforeDeadline,
@@ -152,62 +150,15 @@ class SettingsTabContent extends StatelessWidget {
         TextButton(
           onPressed: () async {
             for (final entry in FamilySettings.defaults.toJson().entries) {
-              await _save(context, entry.key, entry.value);
+              if (!await _save(context, entry.key, entry.value)) return;
               if (!context.mounted) return;
             }
           },
           child: Text(l10n.resetToDefaults),
         ),
         const Divider(height: 32),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(l10n.restrictionToday, style: title),
-        ),
-        for (final child in appState.children)
-          _RestrictionTile(appState: appState, childId: child.id),
-        const Divider(height: 32),
         const _ConnectionSection(),
       ],
-    );
-  }
-}
-
-class _RestrictionTile extends StatelessWidget {
-  final AppState appState;
-  final String childId;
-
-  const _RestrictionTile({required this.appState, required this.childId});
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final child = appState.childrenById[childId]!;
-    final f = appState.followUpFor(childId);
-    final String status;
-    if (f == null) {
-      status = '';
-    } else if (f.suspended) {
-      status = l10n.liftedForToday;
-    } else if (f.restricted) {
-      status = f.reason(l10n) ?? l10n.restricted;
-    } else if (f.overdue.isNotEmpty) {
-      status = l10n.overdueOutsideWindow;
-    } else {
-      status = l10n.notRestricted;
-    }
-    return ListTile(
-      leading: Icon(
-        f?.restricted == true ? Icons.block : Icons.check_circle_outline,
-        color: f?.restricted == true ? Colors.red : Colors.green,
-      ),
-      title: Text(child.name),
-      subtitle: Text(status),
-      trailing: (f == null || f.suspended)
-          ? null
-          : TextButton(
-              onPressed: () => appState.suspendRestriction(childId),
-              child: Text(l10n.liftToday),
-            ),
     );
   }
 }

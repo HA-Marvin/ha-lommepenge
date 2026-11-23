@@ -1405,6 +1405,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unknown setting: {key}'**
   String errUnknownSetting(Object key);
+
+  /// No description provided for @noConnectionTryAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'No connection to Home Assistant – try again'**
+  String get noConnectionTryAgain;
+
+  /// No description provided for @tryAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get tryAgain;
+
+  /// No description provided for @statusOverdue.
+  ///
+  /// In en, this message translates to:
+  /// **'Overdue - can still be done'**
+  String get statusOverdue;
+
+  /// No description provided for @statusUpcomingOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Can be done {date}'**
+  String statusUpcomingOn(Object date);
+
+  /// No description provided for @deadlineLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Deadline {time}'**
+  String deadlineLabel(Object time);
+
+  /// No description provided for @history.
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get history;
+
+  /// No description provided for @showOlder.
+  ///
+  /// In en, this message translates to:
+  /// **'Show older'**
+  String get showOlder;
+
+  /// No description provided for @historyEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing in this period.'**
+  String get historyEmpty;
+
+  /// No description provided for @historyPeriod.
+  ///
+  /// In en, this message translates to:
+  /// **'{from} – {to}'**
+  String historyPeriod(Object from, Object to);
+
+  /// No description provided for @historyApproved.
+  ///
+  /// In en, this message translates to:
+  /// **'Approved'**
+  String get historyApproved;
+
+  /// No description provided for @historyRejected.
+  ///
+  /// In en, this message translates to:
+  /// **'Rejected'**
+  String get historyRejected;
+
+  /// No description provided for @historyMissed.
+  ///
+  /// In en, this message translates to:
+  /// **'Missed'**
+  String get historyMissed;
+
+  /// No description provided for @historyAdjustment.
+  ///
+  /// In en, this message translates to:
+  /// **'Adjustment'**
+  String get historyAdjustment;
+
+  /// No description provided for @doneAt.
+  ///
+  /// In en, this message translates to:
+  /// **'done {time}'**
+  String doneAt(Object time);
 }
 
 class _AppLocalizationsDelegate

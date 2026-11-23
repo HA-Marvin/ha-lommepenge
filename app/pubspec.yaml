@@ -21,15 +21,8 @@ dependencies:
   # State management (kept simple: ChangeNotifier + provider)
   provider: ^6.1.2
 
-  # Local database
-  sqflite: ^2.3.3+1
+  # Temporary folder for downloaded updates
   path_provider: ^2.1.4
-  path: ^1.9.0
-  # Pure Dart/FFI implementation of sqflite for Windows/Linux desktop, where
-  # the regular sqflite plugin has no native implementation (see
-  # DatabaseHelper.initializeFactory). Used to be a dev_dependency for tests
-  # only, but is now needed in the app build itself.
-  sqflite_common_ffi: ^2.3.4
 
   # Local settings (role, PIN hash, connection to Home Assistant, language)
   shared_preferences: ^2.3.2

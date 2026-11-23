@@ -4,9 +4,11 @@ import 'package:provider/provider.dart';
 import '../l10n/l10n.dart';
 import '../models/child.dart';
 import '../providers/app_state.dart';
+import '../widgets/action_feedback.dart';
 
 /// Parent tab to manage the family's children: create, rename and delete.
-/// Errors from `TaskRepository` are shown in a SnackBar.
+/// Each change is confirmed by Home Assistant; errors are shown in a
+/// SnackBar.
 ///
 /// Deliberately has no [AppBar] of its own - used embedded as tab content in
 /// [ParentHomeScreen], the same pattern as the other tabs there.
@@ -29,21 +31,23 @@ class ChildrenScreen extends StatelessWidget {
                 return ListTile(
                   leading: const Icon(Icons.person_outline),
                   title: Text(child.name),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined),
-                        tooltip: l10n.rename,
-                        onPressed: () => _renameDialog(context, child),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        tooltip: l10n.delete,
-                        onPressed: () => _confirmDelete(context, child),
-                      ),
-                    ],
-                  ),
+                  trailing: appState.isBusy(AppState.childKey(child.id))
+                      ? const BusyIndicator()
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined),
+                              tooltip: l10n.rename,
+                              onPressed: () => _renameDialog(context, child),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              tooltip: l10n.delete,
+                              onPressed: () => _confirmDelete(context, child),
+                            ),
+                          ],
+                        ),
                 );
               },
             ),
@@ -101,16 +105,8 @@ class ChildrenScreen extends StatelessWidget {
     return result == true ? controller.text.trim() : null;
   }
 
-  Future<void> _run(BuildContext context, Future<void> Function() action) async {
-    try {
-      await action();
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
-      }
-    }
-  }
+  Future<void> _run(BuildContext context, Future<void> Function() action) =>
+      runAction(context, action);
 
   Future<void> _addDialog(BuildContext context) async {
     final l10n = context.l10n;

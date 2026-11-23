@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/l10n.dart';
-import '../models/task.dart';
 import '../providers/app_state.dart';
 import '../widgets/child_task_list.dart';
 import '../widgets/sync_indicator.dart';
-import '../widgets/task_card.dart';
 import '../widgets/update_banner.dart';
 import 'parent_home_screen.dart';
 import 'pin_entry_screen.dart';
@@ -28,10 +26,10 @@ Future<void> openParentMode(BuildContext context) async {
   appState.exitParentMode();
 }
 
-/// The parent phone's view: ONE shared list of tasks (regardless of which
-/// child/children they apply to), with each child's own balance and weekly
-/// progress at the top. The family screen uses `ScreenOverviewScreen` (one
-/// column per child) instead, and the child's tablet `ChildTabletHomeScreen`.
+/// The parent phone's view: each child's balance at the top, then each
+/// child's task list as Home Assistant sends it. The family screen uses
+/// `ScreenOverviewScreen` (one column per child) instead, and the child's
+/// tablet `ChildTabletHomeScreen`.
 class ChildHomeScreen extends StatefulWidget {
   const ChildHomeScreen({super.key});
 
@@ -55,30 +53,12 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
     if (mounted) await _trySync();
   }
 
-  /// Builds the children's availability status for [task], one entry per
-  /// actually assigned child (see the dynamic "all children") - see [TaskCard].
-  List<ChildTaskStatus> _childStatusesFor(AppState appState, Task task) {
-    final childIds = appState.resolvedChildIdsFor(task);
-    final childrenById = appState.childrenById;
-    return childIds
-        .map((childId) {
-          final child = childrenById[childId];
-          if (child == null) return null;
-          return ChildTaskStatus(
-            childId: childId,
-            childName: child.name,
-            availability: appState.availabilityOf(task, childId),
-            nextAvailableAt: appState.nextAvailableFor(task, childId),
-          );
-        })
-        .whereType<ChildTaskStatus>()
-        .toList();
-  }
-
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final l10n = context.l10n;
+    final children = appState.children;
+    final noTasks = children.every((c) => c.tasks.isEmpty);
 
     return Scaffold(
       appBar: AppBar(
@@ -100,7 +80,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
             const SizedBox(height: 16),
             _ChildBalanceRow(appState: appState),
             const SizedBox(height: 8),
-            if (appState.tasks.isEmpty)
+            if (noTasks)
               Padding(
                 padding: const EdgeInsets.all(32),
                 child: Center(
@@ -112,18 +92,17 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                 ),
               )
             else
-              ...appState.tasks.map(
-                (task) => TaskCard(
-                  task: task,
-                  childStatuses: _childStatusesFor(appState, task),
-                  onComplete: (childId) => completeTaskWithFeedback(
-                    context,
-                    appState,
-                    task,
-                    childId,
+              for (final child in children)
+                if (child.tasks.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                    child: Text(
+                      child.name,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
                   ),
-                ),
-              ),
+                  ...childTaskCards(context, appState, child),
+                ],
             const SizedBox(height: 24),
           ],
         ),
@@ -132,8 +111,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
   }
 }
 
-/// Horizontal, scrollable row with one balance card per child - "typically up
-/// to 3 children side by side", but without a hard limit: more children
+/// Horizontal, scrollable row with one balance card per child - more children
 /// simply scroll horizontally instead of being squeezed in.
 class _ChildBalanceRow extends StatelessWidget {
   final AppState appState;
@@ -146,7 +124,7 @@ class _ChildBalanceRow extends StatelessWidget {
       return const SizedBox.shrink();
     }
     return SizedBox(
-      height: 230,
+      height: 140,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),

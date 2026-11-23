@@ -1,8 +1,5 @@
-import 'dart:convert';
-
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/family_settings.dart';
 import 'ha_client.dart';
 
 /// The currency until Home Assistant has said otherwise.
@@ -38,9 +35,10 @@ enum DeviceRole {
   }
 }
 
-/// Simple wrapper around [SharedPreferences] for all local settings: the
-/// language, the connection to Home Assistant, role, PIN hash and a local
-/// copy of the family's settings/balance info (from HA).
+/// Simple wrapper around [SharedPreferences] for the device's own settings:
+/// the language, the connection to Home Assistant, role, PIN hash and a few
+/// display values (currency, names). The family's data is NOT stored on the
+/// device - the app only keeps HA's latest answer in memory (Del H1).
 class SettingsService {
   static const _keyLanguage = 'language';
   static const _keyCurrency = 'currency';
@@ -58,11 +56,6 @@ class SettingsService {
   // Child's tablet: which child the tablet is bound to.
   static const _keyBoundChildId = 'bound_child_id';
 
-  // The family's times/limits (JSON, see FamilySettings) and parents'
-  // suspension of the restriction for today (JSON: child id -> "YYYY-MM-DD").
-  static const _keyFamilySettings = 'family_settings';
-  static const _keyRestrictionSuspensions = 'restriction_suspensions';
-
   // The latest app version that has been notified about (so the notification
   // only comes once per version).
   static const _keyNotifiedUpdateCode = 'notified_update_code';
@@ -72,9 +65,15 @@ class SettingsService {
   // belongs to the device's clock, not to the connection.
   static const _keyClockOffsetMs = 'clock_offset_ms';
 
-  static const _keyTotalPaidOutOre = 'total_paid_out_ore';
-  static const _keyPaidOutByChild = 'paid_out_by_child';
-  static const _keyOfflineQueue = 'offline_action_queue';
+  /// Keys from before Del H1, when the app kept its own copy of the family's
+  /// data and an offline queue. Removed at startup, see [removeObsoleteData].
+  static const obsoleteKeys = [
+    'family_settings',
+    'restriction_suspensions',
+    'total_paid_out_ore',
+    'paid_out_by_child',
+    'offline_action_queue',
+  ];
 
   final SharedPreferences _prefs;
   SettingsService(this._prefs);
@@ -152,7 +151,6 @@ class SettingsService {
       _keyBoundChildId,
       _keyPinHash,
       _keyPinSalt,
-      _keyOfflineQueue,
     ]) {
       await _prefs.remove(key);
     }
@@ -166,36 +164,7 @@ class SettingsService {
       ? _prefs.remove(_keyBoundChildId)
       : _prefs.setString(_keyBoundChildId, childId);
 
-  // ---- The family's times and limits -----------------------------------------
-
-  FamilySettings get familySettings {
-    final raw = _prefs.getString(_keyFamilySettings);
-    if (raw == null || raw.isEmpty) return FamilySettings.defaults;
-    try {
-      return FamilySettings.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-    } catch (_) {
-      return FamilySettings.defaults;
-    }
-  }
-
-  Future<void> setFamilySettings(FamilySettings value) =>
-      _prefs.setString(_keyFamilySettings, jsonEncode(value.toJson()));
-
-  /// Child id -> date (`YYYY-MM-DD`) on which a parent has lifted the child's
-  /// restriction for the rest of the day.
-  Map<String, String> get restrictionSuspensions {
-    final raw = _prefs.getString(_keyRestrictionSuspensions);
-    if (raw == null || raw.isEmpty) return {};
-    try {
-      return (jsonDecode(raw) as Map<String, dynamic>)
-          .map((k, v) => MapEntry(k, v as String));
-    } catch (_) {
-      return {};
-    }
-  }
-
-  Future<void> setRestrictionSuspensions(Map<String, String> value) =>
-      _prefs.setString(_keyRestrictionSuspensions, jsonEncode(value));
+  // ---- Names, clock and updates ---------------------------------------------
 
   String get deviceName => _prefs.getString(_keyDeviceName) ?? 'Lommepenge';
   Future<void> setDeviceName(String name) =>
@@ -226,48 +195,11 @@ class SettingsService {
     await _prefs.setString(_keyPinSalt, salt);
   }
 
-  // ---- Balance ---------------------------------------------------------------
-  //
-  // [totalPaidOutOre] was one global paid-out amount from when the app only
-  // supported one child; it is only used by the one-time migration in
-  // TaskRepository.migrateLegacyPaidOutIfNeeded. Paid out is now per child.
-
-  int get totalPaidOutOre => _prefs.getInt(_keyTotalPaidOutOre) ?? 0;
-
-  Future<void> setTotalPaidOutOre(int value) =>
-      _prefs.setInt(_keyTotalPaidOutOre, value);
-
-  Map<String, int> get paidOutOreByChild {
-    final raw = _prefs.getString(_keyPaidOutByChild);
-    if (raw == null || raw.isEmpty) return {};
-    try {
-      final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      return decoded.map((key, value) => MapEntry(key, value as int));
-    } catch (_) {
-      // Defensive: an invalid/corrupt stored value must not crash the app -
-      // it is simply treated as "nothing paid out yet for anyone".
-      return {};
+  /// Removes what older versions stored about the family's data (see
+  /// [obsoleteKeys]).
+  Future<void> removeObsoleteData() async {
+    for (final key in obsoleteKeys) {
+      if (_prefs.containsKey(key)) await _prefs.remove(key);
     }
   }
-
-  Future<void> setPaidOutOreByChild(Map<String, int> value) =>
-      _prefs.setString(_keyPaidOutByChild, jsonEncode(value));
-
-  int paidOutOreFor(String childId) => paidOutOreByChild[childId] ?? 0;
-
-  Future<void> setPaidOutOreFor(String childId, int amountOre) async {
-    final current = Map<String, int>.from(paidOutOreByChild);
-    current[childId] = amountOre;
-    await setPaidOutOreByChild(current);
-  }
-
-  // ---- Simple offline queue ------------------------------------------------
-  // Actions that could not be sent to Home Assistant right away, stored as
-  // JSON strings and sent again later in the same order.
-
-  List<String> get offlineQueueRaw =>
-      _prefs.getStringList(_keyOfflineQueue) ?? const [];
-
-  Future<void> setOfflineQueueRaw(List<String> items) =>
-      _prefs.setStringList(_keyOfflineQueue, items);
 }

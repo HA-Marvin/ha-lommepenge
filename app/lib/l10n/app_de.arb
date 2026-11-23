@@ -232,5 +232,19 @@
   "errUnknownAction": "Unbekannte Aktion: {type}",
   "errInvalidTime": "Ungültige Uhrzeit für {key}: {value}",
   "errSettingRange": "{key} muss zwischen {min} und {max} liegen: {value}",
-  "errUnknownSetting": "Unbekannte Einstellung: {key}"
+  "errUnknownSetting": "Unbekannte Einstellung: {key}",
+  "noConnectionTryAgain": "Keine Verbindung zu Home Assistant – versuche es erneut",
+  "tryAgain": "Erneut versuchen",
+  "statusOverdue": "Überfällig - kann noch erledigt werden",
+  "statusUpcomingOn": "Möglich am {date}",
+  "deadlineLabel": "Frist {time}",
+  "history": "Verlauf",
+  "showOlder": "Ältere anzeigen",
+  "historyEmpty": "Nichts in diesem Zeitraum.",
+  "historyPeriod": "{from} – {to}",
+  "historyApproved": "Genehmigt",
+  "historyRejected": "Abgelehnt",
+  "historyMissed": "Verpasst",
+  "historyAdjustment": "Korrektur",
+  "doneAt": "erledigt {time}"
 }

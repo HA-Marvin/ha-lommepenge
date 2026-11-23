@@ -232,5 +232,19 @@
   "errUnknownAction": "Ukendt handling: {type}",
   "errInvalidTime": "Ugyldigt klokkeslæt for {key}: {value}",
   "errSettingRange": "{key} skal være mellem {min} og {max}: {value}",
-  "errUnknownSetting": "Ukendt indstilling: {key}"
+  "errUnknownSetting": "Ukendt indstilling: {key}",
+  "noConnectionTryAgain": "Ingen forbindelse til Home Assistant – prøv igen",
+  "tryAgain": "Prøv igen",
+  "statusOverdue": "For sent - kan stadig laves",
+  "statusUpcomingOn": "Kan laves {date}",
+  "deadlineLabel": "Frist {time}",
+  "history": "Historik",
+  "showOlder": "Vis ældre",
+  "historyEmpty": "Intet i denne periode.",
+  "historyPeriod": "{from} – {to}",
+  "historyApproved": "Godkendt",
+  "historyRejected": "Afvist",
+  "historyMissed": "Ikke nået",
+  "historyAdjustment": "Justering",
+  "doneAt": "lavet {time}"
 }

@@ -232,5 +232,19 @@
   "errUnknownAction": "Acción desconocida: {type}",
   "errInvalidTime": "Hora no válida para {key}: {value}",
   "errSettingRange": "{key} debe estar entre {min} y {max}: {value}",
-  "errUnknownSetting": "Ajuste desconocido: {key}"
+  "errUnknownSetting": "Ajuste desconocido: {key}",
+  "noConnectionTryAgain": "Sin conexión con Home Assistant – inténtalo de nuevo",
+  "tryAgain": "Reintentar",
+  "statusOverdue": "Atrasada - aún se puede hacer",
+  "statusUpcomingOn": "Se puede hacer el {date}",
+  "deadlineLabel": "Límite {time}",
+  "history": "Historial",
+  "showOlder": "Mostrar anteriores",
+  "historyEmpty": "Nada en este período.",
+  "historyPeriod": "{from} – {to}",
+  "historyApproved": "Aprobada",
+  "historyRejected": "Rechazada",
+  "historyMissed": "No realizada",
+  "historyAdjustment": "Ajuste",
+  "doneAt": "hecha {time}"
 }
