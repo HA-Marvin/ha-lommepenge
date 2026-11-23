@@ -15,7 +15,10 @@ class FamilySettings {
   /// Deadline for mandatory tasks without their own deadline.
   final String defaultDueTime;
 
-  /// Pause before the tablet is unlocked when a task was done late.
+  /// How long a lock runs (missed or rejected mandatory task).
+  final int lockMinutes;
+
+  /// The short lock when every cause is a task done late (0 = no lock).
   final int latePauseMinutes;
 
   /// How long before the deadline a warning is shown.
@@ -27,6 +30,7 @@ class FamilySettings {
 
   const FamilySettings({
     this.defaultDueTime = '18:00',
+    this.lockMinutes = 60,
     this.latePauseMinutes = 10,
     this.warningMinutes = 60,
     this.winterFromWeek = 43,
@@ -38,6 +42,7 @@ class FamilySettings {
   /// The keys `set_setting` accepts (see docs/app-api.md).
   static const keys = {
     'defaultDueTime',
+    'lockMinutes',
     'latePauseMinutes',
     'warningMinutes',
     'winterFromWeek',
@@ -46,6 +51,7 @@ class FamilySettings {
 
   Map<String, Object> toJson() => {
         'defaultDueTime': defaultDueTime,
+        'lockMinutes': lockMinutes,
         'latePauseMinutes': latePauseMinutes,
         'warningMinutes': warningMinutes,
         'winterFromWeek': winterFromWeek,
@@ -86,6 +92,8 @@ class FamilySettings {
     switch (key) {
       case 'defaultDueTime':
         return _copy(defaultDueTime: time());
+      case 'lockMinutes':
+        return _copy(lockMinutes: intIn(1, 480));
       case 'latePauseMinutes':
         return _copy(latePauseMinutes: intIn(0, 240));
       case 'warningMinutes':
@@ -101,6 +109,7 @@ class FamilySettings {
 
   FamilySettings _copy({
     String? defaultDueTime,
+    int? lockMinutes,
     int? latePauseMinutes,
     int? warningMinutes,
     int? winterFromWeek,
@@ -108,6 +117,7 @@ class FamilySettings {
   }) {
     return FamilySettings(
       defaultDueTime: defaultDueTime ?? this.defaultDueTime,
+      lockMinutes: lockMinutes ?? this.lockMinutes,
       latePauseMinutes: latePauseMinutes ?? this.latePauseMinutes,
       warningMinutes: warningMinutes ?? this.warningMinutes,
       winterFromWeek: winterFromWeek ?? this.winterFromWeek,

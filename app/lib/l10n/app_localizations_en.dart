@@ -127,25 +127,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'For mandatory tasks without their own deadline.';
 
   @override
-  String get restrictionFrom => 'Restriction from';
-
-  @override
-  String get restrictionFromHelp =>
-      'Tablets can be restricted from this time at the earliest.';
-
-  @override
-  String get restrictionUntil => 'Restriction until';
-
-  @override
-  String get restrictionUntilHelp =>
-      'After this time the restriction is lifted.';
-
-  @override
-  String get pauseTime => 'Pause time';
+  String get pauseTime => 'Short lock when late';
 
   @override
   String get pauseTimeHelp =>
-      'Waiting time before the tablet is unlocked when a task was done late.';
+      'The lock\'s length when a late task is done before its lock has started (0 = no lock).';
 
   @override
   String get warningBeforeDeadline => 'Warning before deadline';
@@ -168,25 +154,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get resetToDefaults => 'Reset to defaults';
-
-  @override
-  String get restrictionToday => 'Restriction today';
-
-  @override
-  String get liftedForToday => 'Lifted for today';
-
-  @override
-  String get restricted => 'Restricted';
-
-  @override
-  String get overdueOutsideWindow =>
-      'Overdue, but outside the restriction time';
-
-  @override
-  String get notRestricted => 'Not restricted';
-
-  @override
-  String get liftToday => 'Lift today';
 
   @override
   String get roleFamilyScreen => 'Family screen';
@@ -492,60 +459,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noTasks => 'No tasks.';
 
   @override
-  String get restrictedTitle => 'Games and YouTube are blocked';
-
-  @override
-  String restrictedDoFirst(Object tasks) {
-    return 'Do these first: $tasks. Then they are unlocked again.';
-  }
-
-  @override
-  String restrictedLatePause(int minutes) {
-    String _temp0 = intl.Intl.pluralLogic(
-      minutes,
-      locale: localeName,
-      other:
-          'The task was done late, so it takes $minutes minutes before your tablet is unlocked again.',
-      one:
-          'The task was done late, so it takes 1 minute before your tablet is unlocked again.',
-    );
-    return '$_temp0';
-  }
-
-  @override
-  String get behindTitle => 'You are behind';
-
-  @override
-  String behindBody(Object tasks, Object time) {
-    return '$tasks should have been done. Games and YouTube are blocked from $time if it is not done.';
-  }
-
-  @override
-  String reminderTitle(Object task) {
-    return 'Remember: $task';
-  }
-
-  @override
-  String reminderBody(Object time) {
-    return 'Must be done by $time, otherwise games and YouTube are blocked.';
-  }
-
-  @override
-  String reasonOverdue(Object tasks) {
-    return 'Missing: $tasks';
-  }
-
-  @override
-  String reasonOverdueTask(Object title, Object due) {
-    return '$title (due $due)';
-  }
-
-  @override
-  String reasonLate(Object time) {
-    return 'The task was done late - unlocks at $time';
-  }
-
-  @override
   String thisWeekAmount(Object amount) {
     return 'This week: $amount';
   }
@@ -837,4 +750,118 @@ class AppLocalizationsEn extends AppLocalizations {
   String doneAt(Object time) {
     return 'done $time';
   }
+
+  @override
+  String get lockMinutes => 'Lock duration';
+
+  @override
+  String get lockMinutesHelp =>
+      'How long the tablet is locked when a mandatory task is missed or rejected (1–480).';
+
+  @override
+  String get serviceStatusChannel => 'Status';
+
+  @override
+  String get serviceMessagesChannel => 'Messages';
+
+  @override
+  String get serviceActive => 'Lommepenge is active';
+
+  @override
+  String serviceLockedUntil(Object time) {
+    return 'Locked until $time';
+  }
+
+  @override
+  String get lockRunningTitle => 'The tablet is locked';
+
+  @override
+  String lockEndsAt(Object time) {
+    return 'Unlocks at $time';
+  }
+
+  @override
+  String get lockPendingTitle => 'A lock is waiting';
+
+  @override
+  String lockPendingBody(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other:
+          'It lasts $minutes minutes and starts the next time the tablet is used.',
+      one: 'It lasts 1 minute and starts the next time the tablet is used.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String lockStatusRunning(Object time) {
+    return 'Locked · $time left';
+  }
+
+  @override
+  String get lockStatusPending => 'Lock waiting';
+
+  @override
+  String get pausedStatus => 'Paused';
+
+  @override
+  String pausedUntilStatus(Object date) {
+    return 'Paused until $date';
+  }
+
+  @override
+  String get notifications => 'Notifications';
+
+  @override
+  String get notificationsEmpty => 'No notifications in the last 7 days.';
+
+  @override
+  String get liftLock => 'Lift lock';
+
+  @override
+  String get lockLifted => 'The lock has been lifted.';
+
+  @override
+  String get pauseChild => 'Pause';
+
+  @override
+  String get pauseHelp =>
+      'No task is mandatory: no deadlines and no locks. Tasks still earn money.';
+
+  @override
+  String pauseTitle(Object name) {
+    return 'Pause $name';
+  }
+
+  @override
+  String get pauseUntilLabel => 'Mandatory again from (optional)';
+
+  @override
+  String get pauseNoEndDate => 'No end date';
+
+  @override
+  String get pauseConfirm => 'Pause';
+
+  @override
+  String get rejectTitle => 'Reject the task?';
+
+  @override
+  String get rejectReasonLabel => 'Reason (optional)';
+
+  @override
+  String get rejectReasonHelp => 'The child sees it in the notification.';
+
+  @override
+  String get historyLock => 'Lock';
+
+  @override
+  String get historyLockStarted => 'Lock started';
+
+  @override
+  String get historyLockEnded => 'Lock ended';
+
+  @override
+  String get historyLockLifted => 'Lock lifted';
 }

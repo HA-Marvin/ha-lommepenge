@@ -3,13 +3,15 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 /// The app's bridge to Android (see `MainActivity.kt`): links from Home
-/// Assistant's install page, the app's version and installation of updates.
-/// On other platforms (and in tests) it answers neutrally.
+/// Assistant's install page, the app's version, installation of updates and
+/// the child's tablet's background service (`LockService.kt`). On other
+/// platforms (and in tests) it answers neutrally.
 class NativeBridge {
   static const _channel = MethodChannel('lommepenge/native');
 
   final _links = StreamController<String>.broadcast();
   final _installFailures = StreamController<String?>.broadcast();
+  final _refreshRequests = StreamController<void>.broadcast();
 
   NativeBridge() {
     _channel.setMethodCallHandler((call) async {
@@ -18,6 +20,8 @@ class NativeBridge {
           _links.add(call.arguments as String);
         case 'installFailed':
           _installFailures.add(call.arguments as String?);
+        case 'refresh':
+          _refreshRequests.add(null);
       }
     });
   }
@@ -28,6 +32,10 @@ class NativeBridge {
   /// Errors from Android's installation of an update (`null` when Android
   /// gives no message).
   Stream<String?> get installFailures => _installFailures.stream;
+
+  /// The background service has changed something in HA (reported use of
+  /// the tablet): fetch the state now.
+  Stream<void> get refreshRequests => _refreshRequests.stream;
 
   /// The link that started the app, if any (only once).
   Future<String?> takeInitialLink() => _call<String>('takeLink');
@@ -69,6 +77,15 @@ class NativeBridge {
         'notify',
         {'title': title, 'text': text, 'channelName': channelName},
       );
+
+  /// Starts ([enabled]) or stops the child's tablet's foreground service.
+  /// [texts] are its texts in the app's language: `statusChannel`,
+  /// `messagesChannel`, `active` and `lockedUntil` (with `{time}`).
+  Future<void> configureChildService({
+    required bool enabled,
+    Map<String, String> texts = const {},
+  }) =>
+      _call<void>('childService', {'enabled': enabled, 'texts': texts});
 
   Future<T?> _call<T>(String method, [Object? arguments]) async {
     try {

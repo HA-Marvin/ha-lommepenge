@@ -8,6 +8,7 @@ import '../models/task.dart';
 import '../providers/app_state.dart';
 import '../widgets/action_feedback.dart';
 import '../widgets/amount_text.dart';
+import '../widgets/lock_view.dart';
 import 'children_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
@@ -194,11 +195,7 @@ class _ApprovalsTab extends StatelessWidget {
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.red),
                         tooltip: l10n.reject,
-                        onPressed: () => runAction(
-                          context,
-                          () => appState
-                              .rejectCompletion(approval.completionId),
-                        ),
+                        onPressed: () => _reject(context, approval.completionId),
                       ),
                       IconButton(
                         icon: const Icon(Icons.check, color: Colors.green),
@@ -214,6 +211,70 @@ class _ApprovalsTab extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Asks for an optional reason (the child sees it in the notification) and
+/// rejects the completion.
+Future<void> _reject(BuildContext context, String completionId) async {
+  final appState = context.read<AppState>();
+  final reason = await showDialog<String>(
+    context: context,
+    builder: (_) => const _RejectDialog(),
+  );
+  if (reason == null || !context.mounted) return;
+  await runAction(
+    context,
+    () => appState.rejectCompletion(completionId, reason: reason),
+  );
+}
+
+/// Returns the (possibly empty) reason, or `null` when cancelled. Owns its
+/// text controller, so it lives as long as the dialog's closing animation.
+class _RejectDialog extends StatefulWidget {
+  const _RejectDialog();
+
+  @override
+  State<_RejectDialog> createState() => _RejectDialogState();
+}
+
+class _RejectDialogState extends State<_RejectDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return AlertDialog(
+      title: Text(l10n.rejectTitle),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: 500,
+        maxLines: 3,
+        minLines: 1,
+        decoration: InputDecoration(
+          labelText: l10n.rejectReasonLabel,
+          helperText: l10n.rejectReasonHelp,
+          border: const OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: Text(l10n.reject),
+        ),
+      ],
     );
   }
 }
@@ -392,6 +453,9 @@ class _ChildOverviewCard extends StatelessWidget {
     final l10n = context.l10n;
     final balance = child.balanceOre;
     final busy = appState.isBusy(AppState.payoutKey(child.id));
+    final lock = child.lock;
+    final lifting = appState.isBusy(AppState.lockKey(child.id));
+    final pausing = appState.isBusy(AppState.pauseKey(child.id));
 
     return Card(
       child: Padding(
@@ -433,12 +497,145 @@ class _ChildOverviewCard extends StatelessWidget {
                   ? null
                   : () => _confirmPayout(context, child),
             ),
+            const Divider(height: 32),
+            LockStatusLine(child: child),
+            if (lock.isPending || lock.isRunning) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                icon: lifting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.lock_open),
+                label: Text(l10n.liftLock),
+                onPressed: lifting
+                    ? null
+                    : () => runAction(
+                          context,
+                          () => appState.liftLock(child.id),
+                          success: l10n.lockLifted,
+                        ),
+              ),
+            ],
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(l10n.pauseChild),
+              subtitle: Text(l10n.pauseHelp),
+              secondary: pausing ? const BusyIndicator() : null,
+              value: child.paused,
+              onChanged: pausing
+                  ? null
+                  : (value) => value
+                      ? _pause(context, child)
+                      : runAction(
+                          context,
+                          () => appState.setPause(child.id, paused: false),
+                        ),
+            ),
           ],
         ),
       ),
     );
   }
 }
+
+/// Pauses [child], with an optional end date chosen in a dialog (the first
+/// day the tasks are mandatory again; after HA's today).
+Future<void> _pause(BuildContext context, Child child) async {
+  final appState = context.read<AppState>();
+  final today = DateTime.tryParse(appState.today ?? '') ?? DateTime.now();
+  final firstDay = DateTime(today.year, today.month, today.day + 1);
+  final choice = await showDialog<_PauseChoice>(
+    context: context,
+    builder: (ctx) => _PauseDialog(childName: child.name, firstDay: firstDay),
+  );
+  if (choice == null || !context.mounted) return;
+  await runAction(
+    context,
+    () => appState.setPause(child.id, paused: true, until: choice.until),
+  );
+}
+
+/// The parent's choice in [_PauseDialog]: [until] is `YYYY-MM-DD` or `null`
+/// (no end date).
+class _PauseChoice {
+  final String? until;
+  const _PauseChoice(this.until);
+}
+
+class _PauseDialog extends StatefulWidget {
+  final String childName;
+  final DateTime firstDay;
+
+  const _PauseDialog({required this.childName, required this.firstDay});
+
+  @override
+  State<_PauseDialog> createState() => _PauseDialogState();
+}
+
+class _PauseDialogState extends State<_PauseDialog> {
+  DateTime? _until;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final until = _until;
+    return AlertDialog(
+      title: Text(l10n.pauseTitle(widget.childName)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(l10n.pauseHelp),
+          const SizedBox(height: 16),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.event),
+            title: Text(l10n.pauseUntilLabel),
+            subtitle: Text(
+              until == null ? l10n.pauseNoEndDate : formatDate(l10n, until),
+            ),
+            trailing: until == null
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.clear),
+                    tooltip: l10n.pauseNoEndDate,
+                    onPressed: () => setState(() => _until = null),
+                  ),
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: until ?? widget.firstDay,
+                firstDate: widget.firstDay,
+                lastDate: widget.firstDay.add(const Duration(days: 365)),
+              );
+              if (picked != null) setState(() => _until = picked);
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(
+            _PauseChoice(until == null ? null : isoDate(until)),
+          ),
+          child: Text(l10n.pauseConfirm),
+        ),
+      ],
+    );
+  }
+}
+
+/// `YYYY-MM-DD`, as Home Assistant expects dates.
+String isoDate(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}'
+    '-${d.day.toString().padLeft(2, '0')}';
 
 /// Confirms and performs a payout for one specific child.
 Future<void> _confirmPayout(BuildContext context, Child child) async {

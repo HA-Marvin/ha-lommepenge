@@ -124,7 +124,8 @@ class _ChildBalanceRow extends StatelessWidget {
       return const SizedBox.shrink();
     }
     return SizedBox(
-      height: 140,
+      // Room for the lock/pause lines (see ChildSummaryCard).
+      height: 190,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),

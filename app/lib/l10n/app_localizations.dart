@@ -320,40 +320,16 @@ abstract class AppLocalizations {
   /// **'For mandatory tasks without their own deadline.'**
   String get defaultDeadlineHelp;
 
-  /// No description provided for @restrictionFrom.
-  ///
-  /// In en, this message translates to:
-  /// **'Restriction from'**
-  String get restrictionFrom;
-
-  /// No description provided for @restrictionFromHelp.
-  ///
-  /// In en, this message translates to:
-  /// **'Tablets can be restricted from this time at the earliest.'**
-  String get restrictionFromHelp;
-
-  /// No description provided for @restrictionUntil.
-  ///
-  /// In en, this message translates to:
-  /// **'Restriction until'**
-  String get restrictionUntil;
-
-  /// No description provided for @restrictionUntilHelp.
-  ///
-  /// In en, this message translates to:
-  /// **'After this time the restriction is lifted.'**
-  String get restrictionUntilHelp;
-
   /// No description provided for @pauseTime.
   ///
   /// In en, this message translates to:
-  /// **'Pause time'**
+  /// **'Short lock when late'**
   String get pauseTime;
 
   /// No description provided for @pauseTimeHelp.
   ///
   /// In en, this message translates to:
-  /// **'Waiting time before the tablet is unlocked when a task was done late.'**
+  /// **'The lock\'s length when a late task is done before its lock has started (0 = no lock).'**
   String get pauseTimeHelp;
 
   /// No description provided for @warningBeforeDeadline.
@@ -397,42 +373,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reset to defaults'**
   String get resetToDefaults;
-
-  /// No description provided for @restrictionToday.
-  ///
-  /// In en, this message translates to:
-  /// **'Restriction today'**
-  String get restrictionToday;
-
-  /// No description provided for @liftedForToday.
-  ///
-  /// In en, this message translates to:
-  /// **'Lifted for today'**
-  String get liftedForToday;
-
-  /// No description provided for @restricted.
-  ///
-  /// In en, this message translates to:
-  /// **'Restricted'**
-  String get restricted;
-
-  /// No description provided for @overdueOutsideWindow.
-  ///
-  /// In en, this message translates to:
-  /// **'Overdue, but outside the restriction time'**
-  String get overdueOutsideWindow;
-
-  /// No description provided for @notRestricted.
-  ///
-  /// In en, this message translates to:
-  /// **'Not restricted'**
-  String get notRestricted;
-
-  /// No description provided for @liftToday.
-  ///
-  /// In en, this message translates to:
-  /// **'Lift today'**
-  String get liftToday;
 
   /// No description provided for @roleFamilyScreen.
   ///
@@ -974,66 +914,6 @@ abstract class AppLocalizations {
   /// **'No tasks.'**
   String get noTasks;
 
-  /// No description provided for @restrictedTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Games and YouTube are blocked'**
-  String get restrictedTitle;
-
-  /// No description provided for @restrictedDoFirst.
-  ///
-  /// In en, this message translates to:
-  /// **'Do these first: {tasks}. Then they are unlocked again.'**
-  String restrictedDoFirst(Object tasks);
-
-  /// No description provided for @restrictedLatePause.
-  ///
-  /// In en, this message translates to:
-  /// **'{minutes, plural, =1{The task was done late, so it takes 1 minute before your tablet is unlocked again.} other{The task was done late, so it takes {minutes} minutes before your tablet is unlocked again.}}'**
-  String restrictedLatePause(int minutes);
-
-  /// No description provided for @behindTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'You are behind'**
-  String get behindTitle;
-
-  /// No description provided for @behindBody.
-  ///
-  /// In en, this message translates to:
-  /// **'{tasks} should have been done. Games and YouTube are blocked from {time} if it is not done.'**
-  String behindBody(Object tasks, Object time);
-
-  /// No description provided for @reminderTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Remember: {task}'**
-  String reminderTitle(Object task);
-
-  /// No description provided for @reminderBody.
-  ///
-  /// In en, this message translates to:
-  /// **'Must be done by {time}, otherwise games and YouTube are blocked.'**
-  String reminderBody(Object time);
-
-  /// No description provided for @reasonOverdue.
-  ///
-  /// In en, this message translates to:
-  /// **'Missing: {tasks}'**
-  String reasonOverdue(Object tasks);
-
-  /// No description provided for @reasonOverdueTask.
-  ///
-  /// In en, this message translates to:
-  /// **'{title} (due {due})'**
-  String reasonOverdueTask(Object title, Object due);
-
-  /// No description provided for @reasonLate.
-  ///
-  /// In en, this message translates to:
-  /// **'The task was done late - unlocks at {time}'**
-  String reasonLate(Object time);
-
   /// No description provided for @thisWeekAmount.
   ///
   /// In en, this message translates to:
@@ -1489,6 +1369,192 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'done {time}'**
   String doneAt(Object time);
+
+  /// No description provided for @lockMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock duration'**
+  String get lockMinutes;
+
+  /// No description provided for @lockMinutesHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'How long the tablet is locked when a mandatory task is missed or rejected (1–480).'**
+  String get lockMinutesHelp;
+
+  /// No description provided for @serviceStatusChannel.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get serviceStatusChannel;
+
+  /// No description provided for @serviceMessagesChannel.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages'**
+  String get serviceMessagesChannel;
+
+  /// No description provided for @serviceActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Lommepenge is active'**
+  String get serviceActive;
+
+  /// No description provided for @serviceLockedUntil.
+  ///
+  /// In en, this message translates to:
+  /// **'Locked until {time}'**
+  String serviceLockedUntil(Object time);
+
+  /// No description provided for @lockRunningTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'The tablet is locked'**
+  String get lockRunningTitle;
+
+  /// No description provided for @lockEndsAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlocks at {time}'**
+  String lockEndsAt(Object time);
+
+  /// No description provided for @lockPendingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'A lock is waiting'**
+  String get lockPendingTitle;
+
+  /// No description provided for @lockPendingBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes, plural, =1{It lasts 1 minute and starts the next time the tablet is used.} other{It lasts {minutes} minutes and starts the next time the tablet is used.}}'**
+  String lockPendingBody(int minutes);
+
+  /// No description provided for @lockStatusRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Locked · {time} left'**
+  String lockStatusRunning(Object time);
+
+  /// No description provided for @lockStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock waiting'**
+  String get lockStatusPending;
+
+  /// No description provided for @pausedStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused'**
+  String get pausedStatus;
+
+  /// No description provided for @pausedUntilStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused until {date}'**
+  String pausedUntilStatus(Object date);
+
+  /// No description provided for @notifications.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications'**
+  String get notifications;
+
+  /// No description provided for @notificationsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No notifications in the last 7 days.'**
+  String get notificationsEmpty;
+
+  /// No description provided for @liftLock.
+  ///
+  /// In en, this message translates to:
+  /// **'Lift lock'**
+  String get liftLock;
+
+  /// No description provided for @lockLifted.
+  ///
+  /// In en, this message translates to:
+  /// **'The lock has been lifted.'**
+  String get lockLifted;
+
+  /// No description provided for @pauseChild.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause'**
+  String get pauseChild;
+
+  /// No description provided for @pauseHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'No task is mandatory: no deadlines and no locks. Tasks still earn money.'**
+  String get pauseHelp;
+
+  /// No description provided for @pauseTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause {name}'**
+  String pauseTitle(Object name);
+
+  /// No description provided for @pauseUntilLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Mandatory again from (optional)'**
+  String get pauseUntilLabel;
+
+  /// No description provided for @pauseNoEndDate.
+  ///
+  /// In en, this message translates to:
+  /// **'No end date'**
+  String get pauseNoEndDate;
+
+  /// No description provided for @pauseConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause'**
+  String get pauseConfirm;
+
+  /// No description provided for @rejectTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reject the task?'**
+  String get rejectTitle;
+
+  /// No description provided for @rejectReasonLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Reason (optional)'**
+  String get rejectReasonLabel;
+
+  /// No description provided for @rejectReasonHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'The child sees it in the notification.'**
+  String get rejectReasonHelp;
+
+  /// No description provided for @historyLock.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock'**
+  String get historyLock;
+
+  /// No description provided for @historyLockStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock started'**
+  String get historyLockStarted;
+
+  /// No description provided for @historyLockEnded.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock ended'**
+  String get historyLockEnded;
+
+  /// No description provided for @historyLockLifted.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock lifted'**
+  String get historyLockLifted;
 }
 
 class _AppLocalizationsDelegate

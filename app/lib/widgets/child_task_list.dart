@@ -5,6 +5,7 @@ import '../models/child.dart';
 import '../providers/app_state.dart';
 import 'action_feedback.dart';
 import 'amount_text.dart';
+import 'lock_view.dart';
 import 'task_card.dart';
 
 /// Marks [entry] as done for [childId] and shows the result as a SnackBar
@@ -42,7 +43,10 @@ List<Widget> childTaskCards(
         ),
     ];
 
-/// The child's name, balance and what was earned this week - all from HA.
+/// The child's name, balance and what was earned this week - all from HA -
+/// and whether the child has a lock or is paused ([LockStatusLine]). The
+/// child's tablet ([large]) shows the lock with its own big view instead,
+/// so there only the pause is shown here.
 class ChildSummaryCard extends StatelessWidget {
   final AppState appState;
   final Child child;
@@ -85,6 +89,7 @@ class ChildSummaryCard extends StatelessWidget {
               ),
               style: text.bodySmall,
             ),
+            LockStatusLine(child: child, showLock: !large),
           ],
         ),
       ),

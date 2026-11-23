@@ -11,6 +11,7 @@ import '../models/approval.dart';
 import '../models/child.dart';
 import '../models/family_settings.dart';
 import '../models/history.dart';
+import '../models/lock.dart';
 import '../models/task.dart';
 import '../services/crypto_service.dart';
 import '../services/ha_client.dart';
@@ -88,6 +89,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   static const _syncInterval = Duration(seconds: 30);
   StreamSubscription<String>? _linkSubscription;
   StreamSubscription<String?>? _installFailureSubscription;
+  StreamSubscription<void>? _refreshSubscription;
   bool _observingLifecycle = false;
 
   AppState({
@@ -121,6 +123,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> setLanguage(String language) async {
     await settings.setLanguage(language);
     _applyLanguage();
+    await _updateChildService();
     // Texts calculated in this class follow the new language at the next sync.
     syncMessage = null;
     notifyListeners();
@@ -156,6 +159,12 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   /// HA's local date (`YYYY-MM-DD`) at the latest state, so "today" is HA's
   /// today even if the device's clock is wrong.
   String? today;
+
+  /// HA's time (`state.now`) in the latest state, and when (by the device's
+  /// clock) that state arrived. A lock's countdown is `endsAt - serverNow`
+  /// minus the time since [stateReceivedAt], see [lockRemainingFor].
+  DateTime? serverNow;
+  DateTime stateReceivedAt = DateTime.now();
 
   SyncStatus syncStatus = SyncStatus.unknown;
   String? syncMessage;
@@ -194,6 +203,16 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   /// Quick lookup child id -> [Child], for showing names in the UI.
   Map<String, Child> get childrenById => {for (final c in children) c.id: c};
 
+  /// How long [lock] has left now, counted down locally from HA's time in
+  /// the latest state (`null` when it is not running).
+  Duration? lockRemainingFor(ChildLock lock, {DateTime? deviceNow}) =>
+      lockRemaining(
+        lock,
+        serverNow: serverNow,
+        receivedAt: stateReceivedAt,
+        deviceNow: deviceNow ?? DateTime.now(),
+      );
+
   // ---- Startup ---------------------------------------------------------------
 
   Future<void> initialize() async {
@@ -218,6 +237,12 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       updateMessage = message ?? l10n.installationFailed;
       notifyListeners();
     });
+    // The child's tablet's background service reported use to HA (which may
+    // have started a lock): show HA's new state at once.
+    _refreshSubscription = _native.refreshRequests.listen((_) {
+      if (isConnected) unawaited(syncNow());
+    });
+    await _updateChildService();
     WidgetsBinding.instance.addObserver(this);
     _observingLifecycle = true;
     final initialLink = await _native.takeInitialLink();
@@ -337,6 +362,8 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   static String childKey(String childId) => 'child:$childId';
   static String payoutKey(String childId) => 'payout:$childId';
   static String settingKey(String key) => 'setting:$key';
+  static String lockKey(String childId) => 'lock:$childId';
+  static String pauseKey(String childId) => 'pause:$childId';
   static const adjustKey = 'adjust';
 
   /// Counts the states applied from actions, so a poll that was started
@@ -465,10 +492,36 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
         'payload': {'completionId': completionId},
       });
 
-  Future<void> rejectCompletion(String completionId) =>
-      _sendAction(completionKey(completionId), {
-        'type': 'reject_completion',
-        'payload': {'completionId': completionId},
+  /// Rejects a completion, with the parent's optional [reason] (shown to
+  /// the child in the notification; HA allows at most 500 characters).
+  Future<void> rejectCompletion(String completionId, {String? reason}) {
+    final text = reason?.trim() ?? '';
+    return _sendAction(completionKey(completionId), {
+      'type': 'reject_completion',
+      'payload': {
+        'completionId': completionId,
+        if (text.isNotEmpty) 'reason': text,
+      },
+    });
+  }
+
+  /// Clears the child's pending or running lock (new causes can lock again).
+  Future<void> liftLock(String childId) => _sendAction(lockKey(childId), {
+        'type': 'lift_lock',
+        'payload': {'childId': childId},
+      });
+
+  /// Pauses the child (no task is mandatory, no lock) until [until] (HA's
+  /// date `YYYY-MM-DD`, after today) or, without it, until resumed; pausing
+  /// also lifts the lock. `paused: false` resumes now.
+  Future<void> setPause(String childId, {required bool paused, String? until}) =>
+      _sendAction(pauseKey(childId), {
+        'type': 'set_pause',
+        'payload': {
+          'childId': childId,
+          'paused': paused,
+          if (paused) 'until': until,
+        },
       });
 
   Future<void> markPaidOut({required String childId}) =>
@@ -601,6 +654,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     connectionMessage = null;
     notifyListeners();
     await syncNow();
+    await _updateChildService();
     return null;
   }
 
@@ -622,6 +676,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     _parentModeTimer?.cancel();
     parentModeUnlocked = false;
     notifyListeners();
+    await _updateChildService();
   }
 
   void _clearState() {
@@ -631,6 +686,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     tasks = const [];
     familySettings = FamilySettings.defaults;
     today = null;
+    serverNow = null;
     _completionIds.clear();
   }
 
@@ -715,6 +771,9 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       familySettingsJson is Map<String, dynamic> ? familySettingsJson : null,
     );
     today = state['today'] as String?;
+    final now = state['now'];
+    serverNow = now is String ? DateTime.tryParse(now) : null;
+    stateReceivedAt = DateTime.now();
     hasState = true;
     _forgetHandledCompletionIds();
 
@@ -737,6 +796,27 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
     return items;
+  }
+
+  // ---- The child's tablet's background service -------------------------------
+
+  /// Starts the foreground service on a connected child's tablet (it polls
+  /// HA, reports use and shows the child's notifications - see
+  /// `LockService.kt`) and stops it everywhere else. Its texts follow the
+  /// app's language.
+  Future<void> _updateChildService() async {
+    final enabled = isConnected && isChildTablet;
+    await _native.configureChildService(
+      enabled: enabled,
+      texts: enabled
+          ? {
+              'statusChannel': l10n.serviceStatusChannel,
+              'messagesChannel': l10n.serviceMessagesChannel,
+              'active': l10n.serviceActive,
+              'lockedUntil': l10n.serviceLockedUntil('{time}'),
+            }
+          : const {},
+    );
   }
 
   // ---- Updating the app from Home Assistant ---------------------------------
@@ -824,6 +904,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     if (_observingLifecycle) WidgetsBinding.instance.removeObserver(this);
     _linkSubscription?.cancel();
     _installFailureSubscription?.cancel();
+    _refreshSubscription?.cancel();
     super.dispose();
   }
 }

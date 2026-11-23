@@ -127,24 +127,11 @@ class AppLocalizationsFr extends AppLocalizations {
       'Pour les tâches obligatoires sans échéance propre.';
 
   @override
-  String get restrictionFrom => 'Blocage à partir de';
-
-  @override
-  String get restrictionFromHelp =>
-      'Les tablettes peuvent être bloquées au plus tôt à partir de cette heure.';
-
-  @override
-  String get restrictionUntil => 'Blocage jusqu\'à';
-
-  @override
-  String get restrictionUntilHelp => 'Après cette heure, le blocage est levé.';
-
-  @override
-  String get pauseTime => 'Temps de pause';
+  String get pauseTime => 'Verrouillage court en cas de retard';
 
   @override
   String get pauseTimeHelp =>
-      'Délai avant le déblocage de la tablette quand une tâche a été faite en retard.';
+      'Durée du verrouillage quand une tâche en retard est faite avant le début de son verrouillage (0 = aucun verrouillage).';
 
   @override
   String get warningBeforeDeadline => 'Avertissement avant l\'échéance';
@@ -168,25 +155,6 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get resetToDefaults => 'Rétablir les valeurs par défaut';
-
-  @override
-  String get restrictionToday => 'Blocage aujourd\'hui';
-
-  @override
-  String get liftedForToday => 'Levé pour aujourd\'hui';
-
-  @override
-  String get restricted => 'Bloquée';
-
-  @override
-  String get overdueOutsideWindow =>
-      'En retard, mais en dehors des heures de blocage';
-
-  @override
-  String get notRestricted => 'Non bloquée';
-
-  @override
-  String get liftToday => 'Lever aujourd\'hui';
 
   @override
   String get roleFamilyScreen => 'Écran familial';
@@ -492,60 +460,6 @@ class AppLocalizationsFr extends AppLocalizations {
   String get noTasks => 'Aucune tâche.';
 
   @override
-  String get restrictedTitle => 'Les jeux et YouTube sont bloqués';
-
-  @override
-  String restrictedDoFirst(Object tasks) {
-    return 'Fais d\'abord : $tasks. Ensuite, ils seront débloqués.';
-  }
-
-  @override
-  String restrictedLatePause(int minutes) {
-    String _temp0 = intl.Intl.pluralLogic(
-      minutes,
-      locale: localeName,
-      other:
-          'La tâche a été faite en retard, il faut donc attendre $minutes minutes avant que ta tablette soit débloquée.',
-      one:
-          'La tâche a été faite en retard, il faut donc attendre 1 minute avant que ta tablette soit débloquée.',
-    );
-    return '$_temp0';
-  }
-
-  @override
-  String get behindTitle => 'Tu es en retard';
-
-  @override
-  String behindBody(Object tasks, Object time) {
-    return '$tasks aurait dû être fait. Les jeux et YouTube seront bloqués à partir de $time si ce n\'est pas fait.';
-  }
-
-  @override
-  String reminderTitle(Object task) {
-    return 'N\'oublie pas : $task';
-  }
-
-  @override
-  String reminderBody(Object time) {
-    return 'Doit être fait avant $time, sinon les jeux et YouTube seront bloqués.';
-  }
-
-  @override
-  String reasonOverdue(Object tasks) {
-    return 'Manquant : $tasks';
-  }
-
-  @override
-  String reasonOverdueTask(Object title, Object due) {
-    return '$title (échéance $due)';
-  }
-
-  @override
-  String reasonLate(Object time) {
-    return 'La tâche a été faite en retard - déblocage à $time';
-  }
-
-  @override
   String thisWeekAmount(Object amount) {
     return 'Cette semaine : $amount';
   }
@@ -842,4 +756,120 @@ class AppLocalizationsFr extends AppLocalizations {
   String doneAt(Object time) {
     return 'faite $time';
   }
+
+  @override
+  String get lockMinutes => 'Durée du verrouillage';
+
+  @override
+  String get lockMinutesHelp =>
+      'Durée du verrouillage de la tablette quand une tâche obligatoire est en retard ou refusée (1–480).';
+
+  @override
+  String get serviceStatusChannel => 'État';
+
+  @override
+  String get serviceMessagesChannel => 'Messages';
+
+  @override
+  String get serviceActive => 'Lommepenge est actif';
+
+  @override
+  String serviceLockedUntil(Object time) {
+    return 'Verrouillée jusqu\'à $time';
+  }
+
+  @override
+  String get lockRunningTitle => 'La tablette est verrouillée';
+
+  @override
+  String lockEndsAt(Object time) {
+    return 'Déverrouillage à $time';
+  }
+
+  @override
+  String get lockPendingTitle => 'Un verrouillage est en attente';
+
+  @override
+  String lockPendingBody(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other:
+          'Il dure $minutes minutes et commence la prochaine fois que la tablette est utilisée.',
+      one:
+          'Il dure 1 minute et commence la prochaine fois que la tablette est utilisée.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String lockStatusRunning(Object time) {
+    return 'Verrouillée · reste $time';
+  }
+
+  @override
+  String get lockStatusPending => 'Verrouillage en attente';
+
+  @override
+  String get pausedStatus => 'En pause';
+
+  @override
+  String pausedUntilStatus(Object date) {
+    return 'En pause jusqu\'au $date';
+  }
+
+  @override
+  String get notifications => 'Notifications';
+
+  @override
+  String get notificationsEmpty => 'Aucune notification ces 7 derniers jours.';
+
+  @override
+  String get liftLock => 'Lever le verrouillage';
+
+  @override
+  String get lockLifted => 'Le verrouillage a été levé.';
+
+  @override
+  String get pauseChild => 'Pause';
+
+  @override
+  String get pauseHelp =>
+      'Aucune tâche n\'est obligatoire : pas d\'échéances ni de verrouillage. Les tâches rapportent toujours de l\'argent.';
+
+  @override
+  String pauseTitle(Object name) {
+    return 'Mettre $name en pause';
+  }
+
+  @override
+  String get pauseUntilLabel =>
+      'De nouveau obligatoires à partir du (facultatif)';
+
+  @override
+  String get pauseNoEndDate => 'Pas de date de fin';
+
+  @override
+  String get pauseConfirm => 'Mettre en pause';
+
+  @override
+  String get rejectTitle => 'Refuser la tâche ?';
+
+  @override
+  String get rejectReasonLabel => 'Raison (facultative)';
+
+  @override
+  String get rejectReasonHelp => 'L\'enfant la verra dans la notification.';
+
+  @override
+  String get historyLock => 'Verrouillage';
+
+  @override
+  String get historyLockStarted => 'Verrouillage commencé';
+
+  @override
+  String get historyLockEnded => 'Verrouillage terminé';
+
+  @override
+  String get historyLockLifted => 'Verrouillage levé';
 }

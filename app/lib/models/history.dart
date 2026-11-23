@@ -1,7 +1,6 @@
 /// The kinds of history items HA sends (and the values of the `types`
-/// filter). Unknown types (e.g. `lock`, coming later) are still shown, with
-/// a neutral look.
-const historyTypes = ['approved', 'rejected', 'adjustment', 'missed'];
+/// filter). Unknown types are still shown, with a neutral look.
+const historyTypes = ['approved', 'rejected', 'adjustment', 'missed', 'lock'];
 
 /// One item in the history (`GET /history`, `items[]`).
 class HistoryItem {
@@ -23,6 +22,10 @@ class HistoryItem {
   final bool late;
   final String? note;
 
+  /// `lock` items: `started`, `ended` or `lifted`, and the lock's length.
+  final String? lockEvent;
+  final int? minutes;
+
   const HistoryItem({
     required this.id,
     required this.type,
@@ -35,6 +38,8 @@ class HistoryItem {
     this.completedAt,
     this.late = false,
     this.note,
+    this.lockEvent,
+    this.minutes,
   });
 
   static HistoryItem? tryParse(Map<String, dynamic> json) {
@@ -54,6 +59,8 @@ class HistoryItem {
       completedAt: completedAt is String ? DateTime.tryParse(completedAt) : null,
       late: json['late'] as bool? ?? false,
       note: json['note'] as String?,
+      lockEvent: json['lockEvent'] is String ? json['lockEvent'] as String : null,
+      minutes: json['minutes'] is num ? (json['minutes'] as num).toInt() : null,
     );
   }
 }

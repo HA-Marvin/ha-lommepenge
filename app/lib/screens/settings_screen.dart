@@ -139,6 +139,8 @@ class SettingsTabContent extends StatelessWidget {
         ),
         timeTile('defaultDueTime', l10n.defaultDeadline, s.defaultDueTime,
             l10n.defaultDeadlineHelp),
+        numberTile('lockMinutes', l10n.lockMinutes, s.lockMinutes,
+            l10n.minutesUnit, l10n.lockMinutesHelp),
         numberTile('latePauseMinutes', l10n.pauseTime, s.latePauseMinutes,
             l10n.minutesUnit, l10n.pauseTimeHelp),
         numberTile('warningMinutes', l10n.warningBeforeDeadline,

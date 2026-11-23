@@ -126,25 +126,11 @@ class AppLocalizationsDe extends AppLocalizations {
   String get defaultDeadlineHelp => 'Für Pflichtaufgaben ohne eigene Frist.';
 
   @override
-  String get restrictionFrom => 'Sperrzeit ab';
-
-  @override
-  String get restrictionFromHelp =>
-      'Tablets können frühestens ab dieser Uhrzeit gesperrt werden.';
-
-  @override
-  String get restrictionUntil => 'Sperrzeit bis';
-
-  @override
-  String get restrictionUntilHelp =>
-      'Nach dieser Uhrzeit wird die Sperre aufgehoben.';
-
-  @override
-  String get pauseTime => 'Pausenzeit';
+  String get pauseTime => 'Kurze Sperre bei Verspätung';
 
   @override
   String get pauseTimeHelp =>
-      'Wartezeit, bevor das Tablet entsperrt wird, wenn eine Aufgabe zu spät erledigt wurde.';
+      'Dauer der Sperre, wenn eine verspätete Aufgabe erledigt wird, bevor ihre Sperre begonnen hat (0 = keine Sperre).';
 
   @override
   String get warningBeforeDeadline => 'Warnung vor der Frist';
@@ -167,24 +153,6 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get resetToDefaults => 'Auf Standard zurücksetzen';
-
-  @override
-  String get restrictionToday => 'Sperre heute';
-
-  @override
-  String get liftedForToday => 'Für heute aufgehoben';
-
-  @override
-  String get restricted => 'Gesperrt';
-
-  @override
-  String get overdueOutsideWindow => 'Überfällig, aber außerhalb der Sperrzeit';
-
-  @override
-  String get notRestricted => 'Nicht gesperrt';
-
-  @override
-  String get liftToday => 'Heute aufheben';
 
   @override
   String get roleFamilyScreen => 'Familienbildschirm';
@@ -490,60 +458,6 @@ class AppLocalizationsDe extends AppLocalizations {
   String get noTasks => 'Keine Aufgaben.';
 
   @override
-  String get restrictedTitle => 'Spiele und YouTube sind gesperrt';
-
-  @override
-  String restrictedDoFirst(Object tasks) {
-    return 'Erledige zuerst: $tasks. Dann werden sie wieder entsperrt.';
-  }
-
-  @override
-  String restrictedLatePause(int minutes) {
-    String _temp0 = intl.Intl.pluralLogic(
-      minutes,
-      locale: localeName,
-      other:
-          'Die Aufgabe wurde zu spät erledigt, deshalb dauert es $minutes Minuten, bis dein Tablet wieder entsperrt wird.',
-      one:
-          'Die Aufgabe wurde zu spät erledigt, deshalb dauert es 1 Minute, bis dein Tablet wieder entsperrt wird.',
-    );
-    return '$_temp0';
-  }
-
-  @override
-  String get behindTitle => 'Du bist im Rückstand';
-
-  @override
-  String behindBody(Object tasks, Object time) {
-    return '$tasks hätte erledigt sein sollen. Spiele und YouTube werden ab $time Uhr gesperrt, wenn es nicht erledigt ist.';
-  }
-
-  @override
-  String reminderTitle(Object task) {
-    return 'Denk an: $task';
-  }
-
-  @override
-  String reminderBody(Object time) {
-    return 'Muss bis $time Uhr erledigt sein, sonst werden Spiele und YouTube gesperrt.';
-  }
-
-  @override
-  String reasonOverdue(Object tasks) {
-    return 'Fehlt: $tasks';
-  }
-
-  @override
-  String reasonOverdueTask(Object title, Object due) {
-    return '$title (fällig $due)';
-  }
-
-  @override
-  String reasonLate(Object time) {
-    return 'Die Aufgabe wurde zu spät erledigt - wird um $time entsperrt';
-  }
-
-  @override
   String thisWeekAmount(Object amount) {
     return 'Diese Woche: $amount';
   }
@@ -838,4 +752,120 @@ class AppLocalizationsDe extends AppLocalizations {
   String doneAt(Object time) {
     return 'erledigt $time';
   }
+
+  @override
+  String get lockMinutes => 'Dauer der Sperre';
+
+  @override
+  String get lockMinutesHelp =>
+      'Wie lange das Tablet gesperrt wird, wenn eine Pflichtaufgabe verpasst oder abgelehnt wird (1–480).';
+
+  @override
+  String get serviceStatusChannel => 'Status';
+
+  @override
+  String get serviceMessagesChannel => 'Nachrichten';
+
+  @override
+  String get serviceActive => 'Lommepenge ist aktiv';
+
+  @override
+  String serviceLockedUntil(Object time) {
+    return 'Gesperrt bis $time';
+  }
+
+  @override
+  String get lockRunningTitle => 'Das Tablet ist gesperrt';
+
+  @override
+  String lockEndsAt(Object time) {
+    return 'Wird um $time entsperrt';
+  }
+
+  @override
+  String get lockPendingTitle => 'Eine Sperre wartet';
+
+  @override
+  String lockPendingBody(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other:
+          'Sie dauert $minutes Minuten und beginnt, wenn das Tablet das nächste Mal benutzt wird.',
+      one:
+          'Sie dauert 1 Minute und beginnt, wenn das Tablet das nächste Mal benutzt wird.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String lockStatusRunning(Object time) {
+    return 'Gesperrt · noch $time';
+  }
+
+  @override
+  String get lockStatusPending => 'Sperre wartet';
+
+  @override
+  String get pausedStatus => 'Pausiert';
+
+  @override
+  String pausedUntilStatus(Object date) {
+    return 'Pausiert bis $date';
+  }
+
+  @override
+  String get notifications => 'Benachrichtigungen';
+
+  @override
+  String get notificationsEmpty =>
+      'Keine Benachrichtigungen in den letzten 7 Tagen.';
+
+  @override
+  String get liftLock => 'Sperre aufheben';
+
+  @override
+  String get lockLifted => 'Die Sperre wurde aufgehoben.';
+
+  @override
+  String get pauseChild => 'Pause';
+
+  @override
+  String get pauseHelp =>
+      'Keine Aufgabe ist Pflicht: keine Fristen und keine Sperren. Aufgaben bringen weiterhin Geld.';
+
+  @override
+  String pauseTitle(Object name) {
+    return '$name pausieren';
+  }
+
+  @override
+  String get pauseUntilLabel => 'Wieder Pflicht ab (optional)';
+
+  @override
+  String get pauseNoEndDate => 'Kein Enddatum';
+
+  @override
+  String get pauseConfirm => 'Pausieren';
+
+  @override
+  String get rejectTitle => 'Aufgabe ablehnen?';
+
+  @override
+  String get rejectReasonLabel => 'Begründung (optional)';
+
+  @override
+  String get rejectReasonHelp => 'Das Kind sieht sie in der Benachrichtigung.';
+
+  @override
+  String get historyLock => 'Sperre';
+
+  @override
+  String get historyLockStarted => 'Sperre begonnen';
+
+  @override
+  String get historyLockEnded => 'Sperre beendet';
+
+  @override
+  String get historyLockLifted => 'Sperre aufgehoben';
 }

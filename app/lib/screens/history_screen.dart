@@ -225,8 +225,23 @@ String historyTypeLabel(AppLocalizations l10n, String type) {
       return l10n.historyMissed;
     case 'adjustment':
       return l10n.historyAdjustment;
+    case 'lock':
+      return l10n.historyLock;
   }
   return type;
+}
+
+/// What happened to a lock in a `lock` history item.
+String lockEventLabel(AppLocalizations l10n, String? event) {
+  switch (event) {
+    case 'started':
+      return l10n.historyLockStarted;
+    case 'ended':
+      return l10n.historyLockEnded;
+    case 'lifted':
+      return l10n.historyLockLifted;
+  }
+  return l10n.historyLock;
 }
 
 class _HistoryTile extends StatelessWidget {
@@ -254,20 +269,33 @@ class _HistoryTile extends StatelessWidget {
       case 'adjustment':
         icon = Icons.tune;
         color = Colors.blueGrey;
+      case 'lock':
+        icon = item.lockEvent == 'started' ? Icons.lock_clock : Icons.lock_open;
+        color = Colors.purple[700]!;
       default:
         icon = Icons.info_outline;
         color = Colors.grey[700]!;
     }
 
+    final isLock = item.type == 'lock';
     final String title;
     if (item.type == 'adjustment') {
       title = l10n.balanceAdjustment(item.note ?? '');
+    } else if (isLock) {
+      final minutes = item.minutes;
+      title = minutes == null
+          ? lockEventLabel(l10n, item.lockEvent)
+          : '${lockEventLabel(l10n, item.lockEvent)} '
+              '($minutes ${l10n.minutesUnit})';
     } else {
       title = item.taskTitle ?? item.note ?? l10n.unknownTask;
     }
     final childName = item.childName.isEmpty ? l10n.unknownChild : item.childName;
     final completedAt = item.completedAt;
+    final note = item.note;
     final subtitle = [
+      // A lock's note is its reason text.
+      if (isLock && note != null && note.isNotEmpty) note,
       if (showChild) childName,
       historyTypeLabel(l10n, item.type),
       formatDateTime(l10n, item.at),
@@ -283,7 +311,8 @@ class _HistoryTile extends StatelessWidget {
       leading: Icon(icon, color: color),
       title: Text(title),
       subtitle: Text(subtitle),
-      trailing: Text(
+      // A lock gives and costs no money.
+      trailing: isLock ? null : Text(
         '$sign${formatAmount(l10n, item.amountOre, currency)}',
         style: TextStyle(
           fontWeight: gaveMoney ? FontWeight.bold : null,

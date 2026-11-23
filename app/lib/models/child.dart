@@ -1,3 +1,4 @@
+import 'lock.dart';
 import 'task.dart';
 
 /// A child in the family, exactly as Home Assistant sends it in the state
@@ -18,6 +19,19 @@ class Child {
   /// HA's order (see [TaskEntry]).
   final List<TaskEntry> tasks;
 
+  /// The child's lock (see docs/app-api.md, "Locks").
+  final ChildLock lock;
+
+  /// Paused: no task is mandatory (no deadline, no lock) until [pausedUntil]
+  /// (`YYYY-MM-DD`, mandatory again from 00:00 that day) or, when that is
+  /// `null`, until a parent resumes.
+  final bool paused;
+  final String? pausedUntil;
+
+  /// Child's tablet only: the child's notifications from the last 7 days,
+  /// newest first (empty on other devices).
+  final List<ChildNotification> notifications;
+
   const Child({
     required this.id,
     required this.name,
@@ -25,6 +39,10 @@ class Child {
     this.balanceOre = 0,
     this.earnedThisWeekOre = 0,
     this.tasks = const [],
+    this.lock = ChildLock.none,
+    this.paused = false,
+    this.pausedUntil,
+    this.notifications = const [],
   });
 
   /// Reads one child defensively: a task entry the app cannot read is
@@ -36,6 +54,15 @@ class Child {
       final entry = TaskEntry.tryParse(raw);
       if (entry != null) tasks.add(entry);
     }
+    final notifications = <ChildNotification>[];
+    final rawNotifications = json['notifications'];
+    if (rawNotifications is List) {
+      for (final raw in rawNotifications) {
+        final notification = ChildNotification.tryParse(raw);
+        if (notification != null) notifications.add(notification);
+      }
+    }
+    final pausedUntil = json['pausedUntil'];
     return Child(
       id: json['id'] as String,
       name: json['name'] as String? ?? '',
@@ -43,6 +70,10 @@ class Child {
       balanceOre: (json['balanceOre'] as num?)?.toInt() ?? 0,
       earnedThisWeekOre: (json['earnedThisWeekOre'] as num?)?.toInt() ?? 0,
       tasks: tasks,
+      lock: ChildLock.fromJson(json['lock']),
+      paused: json['paused'] == true,
+      pausedUntil: pausedUntil is String ? pausedUntil : null,
+      notifications: notifications,
     );
   }
 }
@@ -100,6 +131,10 @@ class TaskEntry {
   /// The pending completion was done after the deadline.
   final bool late;
 
+  /// An overdue entry whose lock has run out: doing it now gives no money
+  /// ([amountOre] is 0).
+  final bool forfeited;
+
   const TaskEntry({
     required this.taskId,
     required this.title,
@@ -114,6 +149,7 @@ class TaskEntry {
     required this.status,
     this.completionId,
     this.late = false,
+    this.forfeited = false,
   });
 
   /// Whether the "Done" button is enabled.
@@ -142,6 +178,7 @@ class TaskEntry {
       status: status,
       completionId: json['completionId'] as String?,
       late: json['late'] as bool? ?? false,
+      forfeited: json['forfeited'] == true,
     );
   }
 }

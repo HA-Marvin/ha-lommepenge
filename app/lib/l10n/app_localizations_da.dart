@@ -128,25 +128,11 @@ class AppLocalizationsDa extends AppLocalizations {
       'For obligatoriske opgaver uden egen frist.';
 
   @override
-  String get restrictionFrom => 'Spærretid fra';
-
-  @override
-  String get restrictionFromHelp =>
-      'Tablets kan tidligst spærres fra dette tidspunkt.';
-
-  @override
-  String get restrictionUntil => 'Spærretid til';
-
-  @override
-  String get restrictionUntilHelp =>
-      'Efter dette tidspunkt ophæves spærringen.';
-
-  @override
-  String get pauseTime => 'Pausetid';
+  String get pauseTime => 'Kort lås ved forsinkelse';
 
   @override
   String get pauseTimeHelp =>
-      'Ventetid før tabletten låses op, når en opgave er udført for sent.';
+      'Låsens længde, når en forsinket opgave udføres, før låsen er startet (0 = ingen lås).';
 
   @override
   String get warningBeforeDeadline => 'Advarsel før frist';
@@ -169,24 +155,6 @@ class AppLocalizationsDa extends AppLocalizations {
 
   @override
   String get resetToDefaults => 'Nulstil til standard';
-
-  @override
-  String get restrictionToday => 'Spærring i dag';
-
-  @override
-  String get liftedForToday => 'Ophævet for i dag';
-
-  @override
-  String get restricted => 'Spærret';
-
-  @override
-  String get overdueOutsideWindow => 'Forsinket, men uden for spærretiden';
-
-  @override
-  String get notRestricted => 'Ikke spærret';
-
-  @override
-  String get liftToday => 'Ophæv i dag';
 
   @override
   String get roleFamilyScreen => 'Fælles skærm';
@@ -492,60 +460,6 @@ class AppLocalizationsDa extends AppLocalizations {
   String get noTasks => 'Ingen opgaver.';
 
   @override
-  String get restrictedTitle => 'Spil og YouTube er spærret';
-
-  @override
-  String restrictedDoFirst(Object tasks) {
-    return 'Lav først: $tasks. Så låses de op igen.';
-  }
-
-  @override
-  String restrictedLatePause(int minutes) {
-    String _temp0 = intl.Intl.pluralLogic(
-      minutes,
-      locale: localeName,
-      other:
-          'Opgaven er udført for sent, så der går $minutes minutter, før din tablet bliver låst op igen.',
-      one:
-          'Opgaven er udført for sent, så der går 1 minut, før din tablet bliver låst op igen.',
-    );
-    return '$_temp0';
-  }
-
-  @override
-  String get behindTitle => 'Du er bagud';
-
-  @override
-  String behindBody(Object tasks, Object time) {
-    return '$tasks skulle være lavet. Spil og YouTube spærres fra kl. $time, hvis det ikke er gjort.';
-  }
-
-  @override
-  String reminderTitle(Object task) {
-    return 'Husk: $task';
-  }
-
-  @override
-  String reminderBody(Object time) {
-    return 'Skal være lavet kl. $time, ellers spærres spil og YouTube.';
-  }
-
-  @override
-  String reasonOverdue(Object tasks) {
-    return 'Mangler: $tasks';
-  }
-
-  @override
-  String reasonOverdueTask(Object title, Object due) {
-    return '$title (frist $due)';
-  }
-
-  @override
-  String reasonLate(Object time) {
-    return 'Opgaven er udført for sent - låses op kl. $time';
-  }
-
-  @override
   String thisWeekAmount(Object amount) {
     return 'Denne uge: $amount';
   }
@@ -835,4 +749,118 @@ class AppLocalizationsDa extends AppLocalizations {
   String doneAt(Object time) {
     return 'lavet $time';
   }
+
+  @override
+  String get lockMinutes => 'Låsens varighed';
+
+  @override
+  String get lockMinutesHelp =>
+      'Hvor længe tabletten låses, når en obligatorisk opgave er forsinket eller afvist (1–480).';
+
+  @override
+  String get serviceStatusChannel => 'Status';
+
+  @override
+  String get serviceMessagesChannel => 'Beskeder';
+
+  @override
+  String get serviceActive => 'Lommepenge er aktiv';
+
+  @override
+  String serviceLockedUntil(Object time) {
+    return 'Låst til kl. $time';
+  }
+
+  @override
+  String get lockRunningTitle => 'Tabletten er låst';
+
+  @override
+  String lockEndsAt(Object time) {
+    return 'Låses op kl. $time';
+  }
+
+  @override
+  String get lockPendingTitle => 'En lås venter';
+
+  @override
+  String lockPendingBody(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other:
+          'Den varer $minutes minutter og starter, næste gang tabletten bruges.',
+      one: 'Den varer 1 minut og starter, næste gang tabletten bruges.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String lockStatusRunning(Object time) {
+    return 'Låst · $time tilbage';
+  }
+
+  @override
+  String get lockStatusPending => 'Lås venter';
+
+  @override
+  String get pausedStatus => 'På pause';
+
+  @override
+  String pausedUntilStatus(Object date) {
+    return 'På pause til $date';
+  }
+
+  @override
+  String get notifications => 'Notifikationer';
+
+  @override
+  String get notificationsEmpty => 'Ingen notifikationer de seneste 7 dage.';
+
+  @override
+  String get liftLock => 'Ophæv lås';
+
+  @override
+  String get lockLifted => 'Låsen er ophævet.';
+
+  @override
+  String get pauseChild => 'Pause';
+
+  @override
+  String get pauseHelp =>
+      'Ingen opgaver er obligatoriske: ingen frister og ingen låse. Opgaverne giver stadig penge.';
+
+  @override
+  String pauseTitle(Object name) {
+    return 'Sæt $name på pause';
+  }
+
+  @override
+  String get pauseUntilLabel => 'Obligatorisk igen fra (valgfrit)';
+
+  @override
+  String get pauseNoEndDate => 'Ingen slutdato';
+
+  @override
+  String get pauseConfirm => 'Sæt på pause';
+
+  @override
+  String get rejectTitle => 'Afvis opgaven?';
+
+  @override
+  String get rejectReasonLabel => 'Begrundelse (valgfri)';
+
+  @override
+  String get rejectReasonHelp => 'Barnet ser den i notifikationen.';
+
+  @override
+  String get historyLock => 'Lås';
+
+  @override
+  String get historyLockStarted => 'Lås startet';
+
+  @override
+  String get historyLockEnded => 'Lås udløbet';
+
+  @override
+  String get historyLockLifted => 'Lås ophævet';
 }

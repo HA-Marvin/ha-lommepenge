@@ -67,15 +67,16 @@ void main() {
     expect(l10nFor('en').completedThisWeek(1), 'This week: 1 completed task');
     expect(l10nFor('en').completedThisWeek(3), 'This week: 3 completed tasks');
     expect(l10nFor('da').completedThisWeek(3), 'Denne uge: 3 fuldførte opgaver');
+    expect(
+      l10nFor('en').lockPendingBody(1),
+      'It lasts 1 minute and starts the next time the tablet is used.',
+    );
+    expect(l10nFor('da').lockPendingBody(60), startsWith('Den varer 60 minutter'));
   });
 
   test('texts with several values keep the order of the values', () {
     // Undeclared placeholders are ordered alphabetically by gen-l10n, so
     // these are declared in app_en.arb.
-    expect(
-      l10nFor('en').reasonOverdueTask('Dishes', '18:00'),
-      'Dishes (due 18:00)',
-    );
     expect(
       l10nFor('en').errSettingRange('latePauseMinutes', '0', '240', '999'),
       'latePauseMinutes must be between 0 and 240: 999',

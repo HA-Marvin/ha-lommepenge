@@ -127,25 +127,11 @@ class AppLocalizationsEs extends AppLocalizations {
       'Para tareas obligatorias sin hora límite propia.';
 
   @override
-  String get restrictionFrom => 'Bloqueo desde';
-
-  @override
-  String get restrictionFromHelp =>
-      'Las tabletas pueden bloquearse como muy pronto a partir de esta hora.';
-
-  @override
-  String get restrictionUntil => 'Bloqueo hasta';
-
-  @override
-  String get restrictionUntilHelp =>
-      'Después de esta hora se quita el bloqueo.';
-
-  @override
-  String get pauseTime => 'Tiempo de pausa';
+  String get pauseTime => 'Bloqueo corto por retraso';
 
   @override
   String get pauseTimeHelp =>
-      'Tiempo de espera antes de desbloquear la tableta cuando una tarea se hizo tarde.';
+      'Duración del bloqueo cuando una tarea atrasada se hace antes de que empiece su bloqueo (0 = sin bloqueo).';
 
   @override
   String get warningBeforeDeadline => 'Aviso antes del límite';
@@ -169,25 +155,6 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get resetToDefaults => 'Restablecer valores predeterminados';
-
-  @override
-  String get restrictionToday => 'Bloqueo hoy';
-
-  @override
-  String get liftedForToday => 'Quitado por hoy';
-
-  @override
-  String get restricted => 'Bloqueada';
-
-  @override
-  String get overdueOutsideWindow =>
-      'Atrasada, pero fuera del horario de bloqueo';
-
-  @override
-  String get notRestricted => 'No bloqueada';
-
-  @override
-  String get liftToday => 'Quitar hoy';
 
   @override
   String get roleFamilyScreen => 'Pantalla familiar';
@@ -492,60 +459,6 @@ class AppLocalizationsEs extends AppLocalizations {
   String get noTasks => 'Sin tareas.';
 
   @override
-  String get restrictedTitle => 'Los juegos y YouTube están bloqueados';
-
-  @override
-  String restrictedDoFirst(Object tasks) {
-    return 'Haz primero: $tasks. Luego se desbloquean de nuevo.';
-  }
-
-  @override
-  String restrictedLatePause(int minutes) {
-    String _temp0 = intl.Intl.pluralLogic(
-      minutes,
-      locale: localeName,
-      other:
-          'La tarea se hizo tarde, así que faltan $minutes minutos para que tu tableta se desbloquee.',
-      one:
-          'La tarea se hizo tarde, así que falta 1 minuto para que tu tableta se desbloquee.',
-    );
-    return '$_temp0';
-  }
-
-  @override
-  String get behindTitle => 'Vas con retraso';
-
-  @override
-  String behindBody(Object tasks, Object time) {
-    return '$tasks ya debería estar hecho. Los juegos y YouTube se bloquean a partir de las $time si no está hecho.';
-  }
-
-  @override
-  String reminderTitle(Object task) {
-    return 'Recuerda: $task';
-  }
-
-  @override
-  String reminderBody(Object time) {
-    return 'Tiene que estar hecho antes de las $time; si no, se bloquean los juegos y YouTube.';
-  }
-
-  @override
-  String reasonOverdue(Object tasks) {
-    return 'Falta: $tasks';
-  }
-
-  @override
-  String reasonOverdueTask(Object title, Object due) {
-    return '$title (límite $due)';
-  }
-
-  @override
-  String reasonLate(Object time) {
-    return 'La tarea se hizo tarde - se desbloquea a las $time';
-  }
-
-  @override
   String thisWeekAmount(Object amount) {
     return 'Esta semana: $amount';
   }
@@ -839,4 +752,119 @@ class AppLocalizationsEs extends AppLocalizations {
   String doneAt(Object time) {
     return 'hecha $time';
   }
+
+  @override
+  String get lockMinutes => 'Duración del bloqueo';
+
+  @override
+  String get lockMinutesHelp =>
+      'Cuánto tiempo se bloquea la tableta cuando una tarea obligatoria se retrasa o se rechaza (1–480).';
+
+  @override
+  String get serviceStatusChannel => 'Estado';
+
+  @override
+  String get serviceMessagesChannel => 'Mensajes';
+
+  @override
+  String get serviceActive => 'Lommepenge está activo';
+
+  @override
+  String serviceLockedUntil(Object time) {
+    return 'Bloqueada hasta las $time';
+  }
+
+  @override
+  String get lockRunningTitle => 'La tableta está bloqueada';
+
+  @override
+  String lockEndsAt(Object time) {
+    return 'Se desbloquea a las $time';
+  }
+
+  @override
+  String get lockPendingTitle => 'Hay un bloqueo pendiente';
+
+  @override
+  String lockPendingBody(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other:
+          'Dura $minutes minutos y empieza la próxima vez que se use la tableta.',
+      one: 'Dura 1 minuto y empieza la próxima vez que se use la tableta.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String lockStatusRunning(Object time) {
+    return 'Bloqueada · quedan $time';
+  }
+
+  @override
+  String get lockStatusPending => 'Bloqueo pendiente';
+
+  @override
+  String get pausedStatus => 'En pausa';
+
+  @override
+  String pausedUntilStatus(Object date) {
+    return 'En pausa hasta el $date';
+  }
+
+  @override
+  String get notifications => 'Notificaciones';
+
+  @override
+  String get notificationsEmpty =>
+      'No hay notificaciones en los últimos 7 días.';
+
+  @override
+  String get liftLock => 'Quitar bloqueo';
+
+  @override
+  String get lockLifted => 'Se ha quitado el bloqueo.';
+
+  @override
+  String get pauseChild => 'Pausa';
+
+  @override
+  String get pauseHelp =>
+      'Ninguna tarea es obligatoria: sin plazos ni bloqueos. Las tareas siguen dando dinero.';
+
+  @override
+  String pauseTitle(Object name) {
+    return 'Pausar a $name';
+  }
+
+  @override
+  String get pauseUntilLabel => 'Obligatorias de nuevo desde (opcional)';
+
+  @override
+  String get pauseNoEndDate => 'Sin fecha de fin';
+
+  @override
+  String get pauseConfirm => 'Pausar';
+
+  @override
+  String get rejectTitle => '¿Rechazar la tarea?';
+
+  @override
+  String get rejectReasonLabel => 'Motivo (opcional)';
+
+  @override
+  String get rejectReasonHelp => 'El niño lo verá en la notificación.';
+
+  @override
+  String get historyLock => 'Bloqueo';
+
+  @override
+  String get historyLockStarted => 'Bloqueo iniciado';
+
+  @override
+  String get historyLockEnded => 'Bloqueo terminado';
+
+  @override
+  String get historyLockLifted => 'Bloqueo quitado';
 }

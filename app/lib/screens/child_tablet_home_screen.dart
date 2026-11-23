@@ -5,18 +5,21 @@ import '../l10n/l10n.dart';
 import '../models/child.dart';
 import '../providers/app_state.dart';
 import '../widgets/child_task_list.dart';
+import '../widgets/lock_view.dart';
 import '../widgets/sync_indicator.dart';
 import '../widgets/update_banner.dart';
 import 'history_screen.dart';
 import 'language_screen.dart';
+import 'notifications_screen.dart';
 
 /// The child's tablet: only that child's balance and tasks, as Home
 /// Assistant sends them. There is no lock/parent button - the parent part
 /// does not exist on this device, and Home Assistant refuses anything other
-/// than "mark as done" for the child itself anyway. The child's own history
-/// and the language can be opened from the app bar. (HA's state is fetched
-/// every 30 seconds and when the app comes to the foreground - see
-/// `AppState`.)
+/// than "mark as done" for the child itself anyway. The child's
+/// notifications, own history and the language can be opened from the app
+/// bar. A lock is shown above the tasks (a big countdown while it runs, see
+/// [LockView]). (HA's state is fetched every 30 seconds and when the app
+/// comes to the foreground - see `AppState`.)
 class ChildTabletHomeScreen extends StatefulWidget {
   const ChildTabletHomeScreen({super.key});
 
@@ -47,6 +50,13 @@ class _ChildTabletHomeScreenState extends State<ChildTabletHomeScreen> {
         title: Text(child == null ? 'Lommepenge' : l10n.hiChild(child.name)),
         actions: [
           SyncIndicator(appState: appState),
+          IconButton(
+            icon: const Icon(Icons.notifications_none),
+            tooltip: l10n.notifications,
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.history),
             tooltip: l10n.history,
@@ -93,6 +103,10 @@ class _ChildTabletHomeScreenState extends State<ChildTabletHomeScreen> {
                 child: child,
                 large: true,
               ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: LockView(child: child),
             ),
             const SizedBox(height: 8),
             if (child.tasks.isEmpty)

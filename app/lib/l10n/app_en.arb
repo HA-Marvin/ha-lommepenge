@@ -41,12 +41,8 @@
   "timesAndLimitsHint": "Can also be changed from Home Assistant. Tap to change.",
   "defaultDeadline": "Default deadline",
   "defaultDeadlineHelp": "For mandatory tasks without their own deadline.",
-  "restrictionFrom": "Restriction from",
-  "restrictionFromHelp": "Tablets can be restricted from this time at the earliest.",
-  "restrictionUntil": "Restriction until",
-  "restrictionUntilHelp": "After this time the restriction is lifted.",
-  "pauseTime": "Pause time",
-  "pauseTimeHelp": "Waiting time before the tablet is unlocked when a task was done late.",
+  "pauseTime": "Short lock when late",
+  "pauseTimeHelp": "The lock's length when a late task is done before its lock has started (0 = no lock).",
   "warningBeforeDeadline": "Warning before deadline",
   "warningBeforeDeadlineHelp": "How long before the deadline the child is warned.",
   "winterFromWeek": "Winter from week",
@@ -54,12 +50,6 @@
   "winterHelp": "Used for packing lists (e.g. indoor shoes).",
   "minutesUnit": "min",
   "resetToDefaults": "Reset to defaults",
-  "restrictionToday": "Restriction today",
-  "liftedForToday": "Lifted for today",
-  "restricted": "Restricted",
-  "overdueOutsideWindow": "Overdue, but outside the restriction time",
-  "notRestricted": "Not restricted",
-  "liftToday": "Lift today",
   "roleFamilyScreen": "Family screen",
   "roleParentPhone": "Parent's phone",
   "deviceSubtitle": "{role} · app version {version}",
@@ -155,24 +145,6 @@
   "noChildrenCreateInParentMode": "There are no children yet. Create them in parent mode.",
   "noTasks": "No tasks.",
 
-  "restrictedTitle": "Games and YouTube are blocked",
-  "restrictedDoFirst": "Do these first: {tasks}. Then they are unlocked again.",
-  "restrictedLatePause": "{minutes, plural, =1{The task was done late, so it takes 1 minute before your tablet is unlocked again.} other{The task was done late, so it takes {minutes} minutes before your tablet is unlocked again.}}",
-  "@restrictedLatePause": {
-    "placeholders": {
-      "minutes": {"type": "int"}
-    }
-  },
-  "behindTitle": "You are behind",
-  "behindBody": "{tasks} should have been done. Games and YouTube are blocked from {time} if it is not done.",
-  "reminderTitle": "Remember: {task}",
-  "reminderBody": "Must be done by {time}, otherwise games and YouTube are blocked.",
-  "reasonOverdue": "Missing: {tasks}",
-  "reasonOverdueTask": "{title} (due {due})",
-  "@reasonOverdueTask": {
-    "placeholders": {"title": {}, "due": {}}
-  },
-  "reasonLate": "The task was done late - unlocks at {time}",
   "thisWeekAmount": "This week: {amount}",
   "completedThisWeek": "{count, plural, =1{This week: 1 completed task} other{This week: {count} completed tasks}}",
   "@completedThisWeek": {
@@ -265,5 +237,42 @@
   "historyRejected": "Rejected",
   "historyMissed": "Missed",
   "historyAdjustment": "Adjustment",
-  "doneAt": "done {time}"
+  "doneAt": "done {time}",
+
+  "lockMinutes": "Lock duration",
+  "lockMinutesHelp": "How long the tablet is locked when a mandatory task is missed or rejected (1–480).",
+  "serviceStatusChannel": "Status",
+  "serviceMessagesChannel": "Messages",
+  "serviceActive": "Lommepenge is active",
+  "serviceLockedUntil": "Locked until {time}",
+  "lockRunningTitle": "The tablet is locked",
+  "lockEndsAt": "Unlocks at {time}",
+  "lockPendingTitle": "A lock is waiting",
+  "lockPendingBody": "{minutes, plural, =1{It lasts 1 minute and starts the next time the tablet is used.} other{It lasts {minutes} minutes and starts the next time the tablet is used.}}",
+  "@lockPendingBody": {
+    "placeholders": {
+      "minutes": {"type": "int"}
+    }
+  },
+  "lockStatusRunning": "Locked · {time} left",
+  "lockStatusPending": "Lock waiting",
+  "pausedStatus": "Paused",
+  "pausedUntilStatus": "Paused until {date}",
+  "notifications": "Notifications",
+  "notificationsEmpty": "No notifications in the last 7 days.",
+  "liftLock": "Lift lock",
+  "lockLifted": "The lock has been lifted.",
+  "pauseChild": "Pause",
+  "pauseHelp": "No task is mandatory: no deadlines and no locks. Tasks still earn money.",
+  "pauseTitle": "Pause {name}",
+  "pauseUntilLabel": "Mandatory again from (optional)",
+  "pauseNoEndDate": "No end date",
+  "pauseConfirm": "Pause",
+  "rejectTitle": "Reject the task?",
+  "rejectReasonLabel": "Reason (optional)",
+  "rejectReasonHelp": "The child sees it in the notification.",
+  "historyLock": "Lock",
+  "historyLockStarted": "Lock started",
+  "historyLockEnded": "Lock ended",
+  "historyLockLifted": "Lock lifted"
 }
