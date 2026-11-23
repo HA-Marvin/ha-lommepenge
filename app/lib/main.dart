@@ -12,6 +12,7 @@ import 'screens/connect_screen.dart';
 import 'screens/language_screen.dart';
 import 'screens/screen_overview_screen.dart';
 import 'services/settings_service.dart';
+import 'widgets/parent_mode_timeout.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,6 +36,9 @@ class LommepengeApp extends StatefulWidget {
 
 class _LommepengeAppState extends State<LommepengeApp> {
   late final Future<AppState> _future;
+
+  /// Lets parent mode be closed from outside the screens (logout timer).
+  final _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
@@ -91,6 +95,14 @@ class _LommepengeAppState extends State<LommepengeApp> {
             builder: (context, language, _) => MaterialApp(
               title: 'Lommepenge',
               debugShowCheckedModeBanner: false,
+              navigatorKey: _navigatorKey,
+              // Every tap keeps parent mode open; after 2 minutes without
+              // one, the family screen closes it (see ParentModeTimeout).
+              builder: (context, child) => ParentModeTimeout(
+                appState: appState,
+                navigatorKey: _navigatorKey,
+                child: child!,
+              ),
               locale: Locale(language),
               supportedLocales: AppLocalizations.supportedLocales,
               localizationsDelegates: const [

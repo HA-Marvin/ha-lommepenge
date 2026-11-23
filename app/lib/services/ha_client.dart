@@ -325,7 +325,7 @@ class HaClient {
           onClockOffsetChanged?.call(clockOffset);
           if (retryOnClockSkew) {
             client.close(force: true);
-            return _send(
+            return await _send(
               connection,
               method,
               path,

@@ -469,17 +469,48 @@ class AppState extends ChangeNotifier {
     return CryptoService.verifyPin(pin, salt, hash);
   }
 
+  /// On the family screen (shared by everyone, e.g. on the fridge) parent
+  /// mode closes by itself after this long without a tap, so a parent who
+  /// walks away does not leave it open to the children. Phones are not
+  /// timed out.
+  static const parentModeTimeout = Duration(minutes: 2);
+  Timer? _parentModeTimer;
+
+  /// Called when parent mode has closed because of inactivity, so the UI can
+  /// leave the parent screens (see `ParentModeTimeout` in main.dart).
+  VoidCallback? onParentModeTimedOut;
+
   void enterParentMode() {
     // A child's tablet has no parent mode - not even if a future UI bug were
     // to try to open it.
     if (isChildTablet) return;
     parentModeUnlocked = true;
+    _restartParentModeTimer();
     notifyListeners();
   }
 
   void exitParentMode() {
+    _parentModeTimer?.cancel();
+    _parentModeTimer = null;
+    if (!parentModeUnlocked) return;
     parentModeUnlocked = false;
     notifyListeners();
+  }
+
+  /// The user touched the screen: parent mode stays open another
+  /// [parentModeTimeout].
+  void registerActivity() {
+    if (parentModeUnlocked) _restartParentModeTimer();
+  }
+
+  void _restartParentModeTimer() {
+    _parentModeTimer?.cancel();
+    _parentModeTimer = null;
+    if (!isScreen) return;
+    _parentModeTimer = Timer(parentModeTimeout, () {
+      exitParentMode();
+      onParentModeTimedOut?.call();
+    });
   }
 
   // ---- Actions (tasks / completions) ---------------------------------------
@@ -740,6 +771,7 @@ class AppState extends ChangeNotifier {
     syncStatus = SyncStatus.unknown;
     syncMessage = null;
     availableUpdate = null;
+    _parentModeTimer?.cancel();
     parentModeUnlocked = false;
     notifyListeners();
   }
@@ -931,6 +963,7 @@ class AppState extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _syncTimer?.cancel();
+    _parentModeTimer?.cancel();
     _linkSubscription?.cancel();
     _installFailureSubscription?.cancel();
     super.dispose();
