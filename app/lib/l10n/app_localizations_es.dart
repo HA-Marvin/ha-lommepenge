@@ -261,6 +261,23 @@ class AppLocalizationsEs extends AppLocalizations {
   String get reject => 'Rechazar';
 
   @override
+  String get approveAll => 'Aprobar todas';
+
+  @override
+  String approveAllTitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '¿Aprobar $count tareas?',
+      one: '¿Aprobar 1 tarea?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get approveAllHelp => 'Rechaza primero las que no quieras aprobar.';
+
+  @override
   String get adjustBalance => 'Ajustar saldo';
 
   @override

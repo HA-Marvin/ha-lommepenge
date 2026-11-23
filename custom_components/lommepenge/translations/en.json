@@ -11,7 +11,7 @@
           "currency": "Currency"
         },
         "data_description": {
-          "pin": "Unlocks the parent part of the app on the family screen and the parents' phones.",
+          "pin": "Unlocks the parent part of the app on the family screen. The parents' phones open it without a PIN.",
           "language": "Language of entity names, lock reasons, notifications and the install page - independent of Home Assistant's language. Each device chooses its own language in the app.",
           "currency": "Written as you want it shown, e.g. DKK, kr, € or USD."
         }

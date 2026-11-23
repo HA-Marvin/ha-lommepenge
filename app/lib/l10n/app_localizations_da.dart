@@ -262,6 +262,23 @@ class AppLocalizationsDa extends AppLocalizations {
   String get reject => 'Afvis';
 
   @override
+  String get approveAll => 'Godkend alle';
+
+  @override
+  String approveAllTitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Godkend $count opgaver?',
+      one: 'Godkend 1 opgave?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get approveAllHelp => 'Afvis først dem, du ikke vil godkende.';
+
+  @override
   String get adjustBalance => 'Justér saldo';
 
   @override

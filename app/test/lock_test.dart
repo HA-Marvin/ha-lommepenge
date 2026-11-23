@@ -2,6 +2,9 @@
 // parsed defensively, the countdown is counted down locally from HA's time,
 // the tablet shows the lock per type and the notifications, and parents can
 // lift a lock, pause a child and reject with a reason - each confirmed by HA.
+// Del H5: "Approve all", a parent's phone opens parent mode without a PIN
+// (only the family screen has the PIN and the logout timer), and the child's
+// tablet has no parent functions.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -16,10 +19,13 @@ import 'package:lommepenge_app/models/family_settings.dart';
 import 'package:lommepenge_app/models/history.dart';
 import 'package:lommepenge_app/models/lock.dart';
 import 'package:lommepenge_app/providers/app_state.dart';
+import 'package:lommepenge_app/screens/child_home_screen.dart';
 import 'package:lommepenge_app/screens/child_tablet_home_screen.dart';
 import 'package:lommepenge_app/screens/history_screen.dart';
 import 'package:lommepenge_app/screens/parent_home_screen.dart';
+import 'package:lommepenge_app/screens/pin_entry_screen.dart';
 import 'package:lommepenge_app/screens/screen_overview_screen.dart';
+import 'package:lommepenge_app/services/crypto_service.dart';
 import 'package:lommepenge_app/services/ha_client.dart';
 import 'package:lommepenge_app/services/settings_service.dart';
 import 'package:lommepenge_app/widgets/lock_view.dart';
@@ -106,6 +112,22 @@ Map<String, dynamic> _state(Map<String, dynamic> child, {String role = 'child'})
         'tasks': const [],
         'settings': {'defaultDueTime': '18:00', 'lockMinutes': 45},
       },
+      // Only the family screen gets the PIN (Del H5).
+      if (role == 'screen') ...{
+        'pinHash': CryptoService.hashPin('2468', 'salt'),
+        'pinSalt': 'salt',
+      },
+    };
+
+Map<String, dynamic> _approval(String id, String title) => {
+      'completionId': id,
+      'childId': 'emma',
+      'childName': 'Emma',
+      'taskId': 't-$id',
+      'taskTitle': title,
+      'amountOre': 500,
+      'completedAt': '2026-11-23T18:10:00.000',
+      'late': false,
     };
 
 /// Answers like Home Assistant without a network; an action waits for
@@ -678,6 +700,207 @@ void main() {
       expect(historyTypeLabel(l10nFor('en'), 'lock'), 'Lock');
       expect(historyTypeLabel(l10nFor('da'), 'lock'), 'Lås');
       expect(lockEventLabel(l10nFor('en'), 'lifted'), 'Lock lifted');
+      appState.dispose();
+    });
+
+    testWidgets('a number setting is saved from its dialog', (tester) async {
+      final (appState, stub) = await openTab(tester, 'Settings');
+      await tester.tap(find.text('Lock duration'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '30');
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      // The dialog's closing animation must not use a disposed controller.
+      // (The spinner runs until HA answers, so the frames are pumped.)
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.takeException(), isNull);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(appState.isBusy(AppState.settingKey('lockMinutes')), isTrue);
+      expect(stub.actions.single, {
+        'type': 'set_setting',
+        'payload': {'key': 'lockMinutes', 'value': 30},
+      });
+      stub.actionAnswer!.complete(HaResult.ok(stub.state));
+      await tester.pumpAndSettle();
+      appState.dispose();
+    });
+  });
+
+  group('Approve all (Del H5)', () {
+    Future<(AppState, StubHa)> openApprovals(WidgetTester tester) async {
+      final (appState, stub) = await _appState(_child(), role: 'parent');
+      stub.state = {
+        ...stub.state,
+        'approvals': [
+          _approval('c1', 'Empty the dishwasher'),
+          _approval('c2', 'Walk the dog'),
+        ],
+      };
+      await appState.syncNow();
+      await _pump(tester, appState, const ParentHomeScreen());
+      await tester.tap(find.text('Approvals'));
+      await tester.pumpAndSettle();
+      return (appState, stub);
+    }
+
+    testWidgets('approves exactly the shown list after one confirmation',
+        (tester) async {
+      final (appState, stub) = await openApprovals(tester);
+
+      await tester.tap(find.text('Approve all'));
+      await tester.pumpAndSettle();
+      expect(find.text('Approve 2 tasks?'), findsOneWidget);
+      expect(find.text("Reject the ones you don't want to approve first."),
+          findsOneWidget);
+
+      // A completion that arrives while the dialog is open is not approved
+      // unseen.
+      stub.state = {
+        ...stub.state,
+        'approvals': [
+          _approval('c1', 'Empty the dishwasher'),
+          _approval('c2', 'Walk the dog'),
+          _approval('c3', 'Tidy the room'),
+        ],
+      };
+      await appState.syncNow();
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Approve all').last);
+      await tester.pump();
+      expect(stub.actions.single, {
+        'type': 'approve_completions',
+        'payload': {
+          'completionIds': ['c1', 'c2'],
+        },
+      });
+      // Spinner: the button and every row are busy until HA answers.
+      expect(appState.isBusy(AppState.approveAllKey), isTrue);
+      final button = find.ancestor(
+        of: find.text('Approve all'),
+        matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+      );
+      expect(tester.widget<ButtonStyleButton>(button.first).onPressed, isNull);
+      expect(find.byTooltip('Approve'), findsNothing);
+
+      stub.state = {
+        ...stub.state,
+        'approvals': [_approval('c3', 'Tidy the room')],
+      };
+      stub.actionAnswer!.complete(HaResult.ok(stub.state));
+      await tester.pumpAndSettle();
+      expect(find.text('Empty the dishwasher'), findsNothing);
+      expect(find.text('Tidy the room'), findsOneWidget);
+      expect(appState.isBusy(AppState.approveAllKey), isFalse);
+      appState.dispose();
+    });
+
+    testWidgets('a failure changes nothing; cancelling sends nothing',
+        (tester) async {
+      final (appState, stub) = await openApprovals(tester);
+
+      await tester.tap(find.text('Approve all'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(stub.actions, isEmpty);
+
+      await tester.tap(find.text('Approve all'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Approve all').last);
+      await tester.pump();
+      stub.actionAnswer!.complete(const HaResult.failure(
+        'No connection to Home Assistant – try again',
+        offline: true,
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('No connection to Home Assistant – try again'),
+          findsOneWidget);
+      expect(find.text('Empty the dishwasher'), findsOneWidget);
+      expect(find.text('Walk the dog'), findsOneWidget);
+      expect(appState.isBusy(AppState.approveAllKey), isFalse);
+      appState.dispose();
+    });
+  });
+
+  group('Who gets parent mode (Del H5)', () {
+    testWidgets("a parent's phone opens parent mode without PIN or timer",
+        (tester) async {
+      final (appState, _) = await _appState(_child(), role: 'parent');
+      expect(appState.parentModeNeedsPin, isFalse);
+      await _pump(tester, appState, const ChildHomeScreen());
+
+      await tester.tap(find.byTooltip('Parent mode'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PinEntryScreen), findsNothing);
+      expect(find.byType(ParentHomeScreen), findsOneWidget);
+      expect(appState.parentModeUnlocked, isTrue);
+
+      await tester.pump(const Duration(minutes: 30));
+      expect(appState.parentModeUnlocked, isTrue);
+      expect(find.byType(ParentHomeScreen), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Switch to child mode'));
+      await tester.pumpAndSettle();
+      expect(appState.parentModeUnlocked, isFalse);
+      appState.dispose();
+    });
+
+    testWidgets('the family screen still asks for the PIN and logs out',
+        (tester) async {
+      final (appState, _) = await _appState(_child(), role: 'screen');
+      expect(appState.parentModeNeedsPin, isTrue);
+      await _pump(tester, appState, const ScreenOverviewScreen());
+
+      await tester.tap(find.byTooltip('Parent mode'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PinEntryScreen), findsOneWidget);
+      await tester.enterText(find.byType(TextField), '1111');
+      await tester.tap(find.text('Unlock'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ParentHomeScreen), findsNothing);
+
+      await tester.enterText(find.byType(TextField), '2468');
+      await tester.tap(find.text('Unlock'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ParentHomeScreen), findsOneWidget);
+      expect(appState.parentModeUnlocked, isTrue);
+
+      await tester.pump(const Duration(minutes: 2, seconds: 1));
+      expect(appState.parentModeUnlocked, isFalse);
+      await tester.pumpWidget(const SizedBox());
+      appState.dispose();
+    });
+
+    testWidgets("the child's tablet has no parent functions", (tester) async {
+      final (appState, _) = await _appState(_child(lock: _pendingLock()));
+      expect(appState.isChildTablet, isTrue);
+      await _pump(tester, appState, const ChildTabletHomeScreen());
+
+      expect(find.byTooltip('Parent mode'), findsNothing);
+      for (final text in [
+        'Approve all',
+        'Approve',
+        'Reject',
+        'Lift lock',
+        'Pause',
+        'Approvals',
+      ]) {
+        expect(find.text(text), findsNothing, reason: text);
+        expect(find.byTooltip(text), findsNothing, reason: text);
+      }
+      expect(find.byType(Switch), findsNothing);
+      // HA sends a tablet no approvals and no PIN.
+      expect(appState.approvals, isEmpty);
+      expect(appState.settings.pinHash, isNull);
+
+      // Even if something tried to open parent mode, it stays closed.
+      final context = tester.element(find.byType(ChildTabletHomeScreen));
+      await openParentMode(context);
+      await tester.pumpAndSettle();
+      expect(find.byType(PinEntryScreen), findsNothing);
+      expect(find.byType(ParentHomeScreen), findsNothing);
+      appState.enterParentMode();
+      expect(appState.parentModeUnlocked, isFalse);
       appState.dispose();
     });
   });

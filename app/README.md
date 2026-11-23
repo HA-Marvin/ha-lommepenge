@@ -31,8 +31,8 @@ changed on the device itself:
 
 | Role | View | Parent part |
 | --- | --- | --- |
-| Family screen (e.g. the fridge) | All children, one column per child | Locked with the family's PIN |
-| Parent's phone | Shared task list and balances | Locked with the family's PIN |
+| Family screen (e.g. the fridge) | All children, one column per child | Locked with the family's PIN; closes after 2 minutes without a tap |
+| Parent's phone | Shared task list and balances | Opens directly, without PIN or logout timer |
 | Child's tablet | Only that child's tasks | Does not exist – HA refuses anything other than "mark as done" for the child itself |
 
 The PIN is set in Home Assistant. A child's tablet can only be connected again

@@ -566,6 +566,24 @@ abstract class AppLocalizations {
   /// **'Reject'**
   String get reject;
 
+  /// No description provided for @approveAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve all'**
+  String get approveAll;
+
+  /// No description provided for @approveAllTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Approve 1 task?} other{Approve {count} tasks?}}'**
+  String approveAllTitle(int count);
+
+  /// No description provided for @approveAllHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Reject the ones you don\'t want to approve first.'**
+  String get approveAllHelp;
+
   /// No description provided for @adjustBalance.
   ///
   /// In en, this message translates to:

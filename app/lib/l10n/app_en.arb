@@ -84,6 +84,14 @@
   "late": "late",
   "approve": "Approve",
   "reject": "Reject",
+  "approveAll": "Approve all",
+  "approveAllTitle": "{count, plural, =1{Approve 1 task?} other{Approve {count} tasks?}}",
+  "@approveAllTitle": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "approveAllHelp": "Reject the ones you don't want to approve first.",
   "adjustBalance": "Adjust balance",
   "adjustBalanceHelp": "Use this to correct a wrong balance, e.g. after a reinstall. The amount can be negative.",
   "child": "Child",

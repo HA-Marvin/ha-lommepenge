@@ -18,8 +18,8 @@ import 'task_edit_screen.dart';
 /// settings - gathered in tabs. Everything shown comes from Home Assistant's
 /// latest state (the parent part of it), and every change is an action HA
 /// confirms (see `AppState`). New devices are added in Home Assistant.
-/// Requires that the user has already entered the correct PIN (handled by
-/// [PinEntryScreen] before this screen is opened).
+/// Opened by `openParentMode`: on the family screen only after the correct
+/// PIN, on a parent's phone directly (Del H5).
 class ParentHomeScreen extends StatelessWidget {
   const ParentHomeScreen({super.key});
 
@@ -160,21 +160,43 @@ class _ApprovalsTab extends StatelessWidget {
     final appState = context.watch<AppState>();
     final l10n = context.l10n;
     final pending = appState.approvals;
+    final approvingAll = appState.isBusy(AppState.approveAllKey);
 
     if (pending.isEmpty) {
       return Center(child: Text(l10n.noPendingApprovals));
     }
 
     return ListView.builder(
-      itemCount: pending.length,
+      itemCount: pending.length + 1,
       itemBuilder: (context, index) {
-        final approval = pending[index];
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+            child: FilledButton.icon(
+              icon: approvingAll
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.done_all),
+              label: Text(l10n.approveAll),
+              onPressed: approvingAll
+                  ? null
+                  : () => _approveAll(
+                        context,
+                        [for (final a in pending) a.completionId],
+                      ),
+            ),
+          );
+        }
+        final approval = pending[index - 1];
         final title =
             approval.taskTitle.isEmpty ? l10n.unknownTask : approval.taskTitle;
         final childName =
             approval.childName.isEmpty ? l10n.unknownChild : approval.childName;
         final completedAt = approval.completedAt;
-        final busy =
+        final busy = approvingAll ||
             appState.isBusy(AppState.completionKey(approval.completionId));
 
         return Card(
@@ -212,6 +234,36 @@ class _ApprovalsTab extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+/// "Approve all" (Del H5): after one confirmation approves exactly the
+/// [completionIds] shown. Tasks the parent does not want to approve must be
+/// rejected first - there is no selection.
+Future<void> _approveAll(
+  BuildContext context,
+  List<String> completionIds,
+) async {
+  final appState = context.read<AppState>();
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(ctx.l10n.approveAllTitle(completionIds.length)),
+      content: Text(ctx.l10n.approveAllHelp),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: Text(ctx.l10n.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: Text(ctx.l10n.approveAll),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true && context.mounted) {
+    await runAction(context, () => appState.approveCompletions(completionIds));
   }
 }
 

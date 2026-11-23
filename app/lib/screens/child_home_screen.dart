@@ -9,16 +9,20 @@ import '../widgets/update_banner.dart';
 import 'parent_home_screen.dart';
 import 'pin_entry_screen.dart';
 
-/// Asks for the parent PIN and opens parent mode. Shared by the parent
-/// phone's and the family screen's views; deliberately does not exist on the
-/// child's tablet.
+/// Opens parent mode. Shared by the parent phone's and the family screen's
+/// views; deliberately does not exist on the child's tablet. Only the family
+/// screen asks for the parent PIN first (and logs out after 2 minutes
+/// without a tap); a parent's phone opens it directly (Del H5).
 Future<void> openParentMode(BuildContext context) async {
   final navigator = Navigator.of(context);
   final appState = context.read<AppState>();
-  final unlocked = await navigator.push<bool>(
-    MaterialPageRoute(builder: (_) => const PinEntryScreen()),
-  );
-  if (unlocked != true) return;
+  if (appState.isChildTablet) return;
+  if (appState.parentModeNeedsPin) {
+    final unlocked = await navigator.push<bool>(
+      MaterialPageRoute(builder: (_) => const PinEntryScreen()),
+    );
+    if (unlocked != true) return;
+  }
   appState.enterParentMode();
   await navigator.push(
     MaterialPageRoute(builder: (_) => const ParentHomeScreen()),
@@ -66,7 +70,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
         actions: [
           SyncIndicator(appState: appState),
           IconButton(
-            icon: const Icon(Icons.lock_outline),
+            // No PIN on a parent's phone, so no lock icon.
+            icon: const Icon(Icons.admin_panel_settings_outlined),
             tooltip: l10n.parentMode,
             onPressed: _openParentMode,
           ),

@@ -11,7 +11,7 @@
           "currency": "Valuta"
         },
         "data_description": {
-          "pin": "Låser forælder-delen op i appen på den fælles skærm og forældrenes telefoner.",
+          "pin": "Låser forælder-delen op i appen på den fælles skærm. Forældrenes telefoner åbner den uden PIN.",
           "language": "Sprog for entiteternes navne, årsager til spærring, notifikationer og installationssiden - uafhængigt af Home Assistants sprog. Hver enhed vælger sit eget sprog i appen.",
           "currency": "Skrives som den skal vises, fx DKK, kr, € eller USD."
         }

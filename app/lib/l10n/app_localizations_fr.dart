@@ -262,6 +262,24 @@ class AppLocalizationsFr extends AppLocalizations {
   String get reject => 'Refuser';
 
   @override
+  String get approveAll => 'Tout valider';
+
+  @override
+  String approveAllTitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Valider $count tâches ?',
+      one: 'Valider 1 tâche ?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get approveAllHelp =>
+      'Refuse d\'abord celles que tu ne veux pas valider.';
+
+  @override
   String get adjustBalance => 'Ajuster le solde';
 
   @override

@@ -289,6 +289,11 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
 
   // ---- Parent mode -------------------------------------------------------
 
+  /// Whether parent mode asks for the PIN first: only on the family screen
+  /// (shared, e.g. on the fridge). A parent's phone opens parent mode
+  /// directly (Del H5); a child's tablet has no parent mode at all.
+  bool get parentModeNeedsPin => !isPhone;
+
   /// Checks the family's parent PIN (set in Home Assistant).
   bool verifyPin(String pin) {
     final hash = settings.pinHash;
@@ -365,6 +370,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   static String lockKey(String childId) => 'lock:$childId';
   static String pauseKey(String childId) => 'pause:$childId';
   static const adjustKey = 'adjust';
+  static const approveAllKey = 'approveAll';
 
   /// Counts the states applied from actions, so a poll that was started
   /// before an action and answers after it does not show the older state.
@@ -490,6 +496,15 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       _sendAction(completionKey(completionId), {
         'type': 'approve_completion',
         'payload': {'completionId': completionId},
+      });
+
+  /// "Approve all" (Del H5): approves exactly [completionIds] - the list the
+  /// parent saw - so a completion that arrived meanwhile is not approved
+  /// unseen. HA approves all or none of them.
+  Future<void> approveCompletions(List<String> completionIds) =>
+      _sendAction(approveAllKey, {
+        'type': 'approve_completions',
+        'payload': {'completionIds': completionIds},
       });
 
   /// Rejects a completion, with the parent's optional [reason] (shown to

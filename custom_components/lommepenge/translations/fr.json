@@ -11,7 +11,7 @@
           "currency": "Devise"
         },
         "data_description": {
-          "pin": "Déverrouille la partie parent de l'application sur l'écran familial et les téléphones des parents.",
+          "pin": "Déverrouille la partie parent de l'application sur l'écran familial. Les téléphones des parents l'ouvrent sans PIN.",
           "language": "Langue des noms d'entités, des motifs de blocage, des notifications et de la page d'installation - indépendante de la langue de Home Assistant. Chaque appareil choisit sa propre langue dans l'application.",
           "currency": "Écrite comme tu veux qu'elle s'affiche, p. ex. EUR, €, DKK ou CHF."
         }

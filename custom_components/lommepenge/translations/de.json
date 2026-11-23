@@ -11,7 +11,7 @@
           "currency": "Währung"
         },
         "data_description": {
-          "pin": "Entsperrt den Elternbereich der App auf dem Familienbildschirm und den Handys der Eltern.",
+          "pin": "Entsperrt den Elternbereich der App auf dem Familienbildschirm. Die Handys der Eltern öffnen ihn ohne PIN.",
           "language": "Sprache der Entitätsnamen, Sperrgründe, Benachrichtigungen und der Installationsseite - unabhängig von der Sprache von Home Assistant. Jedes Gerät wählt seine eigene Sprache in der App.",
           "currency": "So geschrieben, wie sie angezeigt werden soll, z. B. EUR, €, DKK oder CHF."
         }

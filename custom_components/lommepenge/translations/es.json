@@ -11,7 +11,7 @@
           "currency": "Moneda"
         },
         "data_description": {
-          "pin": "Desbloquea la parte de padres de la app en la pantalla familiar y los móviles de los padres.",
+          "pin": "Desbloquea la parte de padres de la app en la pantalla familiar. Los móviles de los padres la abren sin PIN.",
           "language": "Idioma de los nombres de las entidades, los motivos de bloqueo, las notificaciones y la página de instalación, independiente del idioma de Home Assistant. Cada dispositivo elige su propio idioma en la app.",
           "currency": "Escrita como quieres que se muestre, p. ej. EUR, €, DKK o USD."
         }

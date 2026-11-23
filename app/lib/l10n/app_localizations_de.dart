@@ -260,6 +260,24 @@ class AppLocalizationsDe extends AppLocalizations {
   String get reject => 'Ablehnen';
 
   @override
+  String get approveAll => 'Alle freigeben';
+
+  @override
+  String approveAllTitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Aufgaben freigeben?',
+      one: '1 Aufgabe freigeben?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get approveAllHelp =>
+      'Lehne zuerst die ab, die du nicht freigeben willst.';
+
+  @override
   String get adjustBalance => 'Guthaben korrigieren';
 
   @override
