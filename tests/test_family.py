@@ -53,6 +53,42 @@ def test_complete_approve_and_balance(family: Family) -> None:
     assert family.balance_ore("emma") == 0
 
 
+
+def test_approve_all_approves_only_the_listed_completions(family: Family) -> None:
+    """Del H5: "Approve all" approves exactly the list the parent saw."""
+    emma = act(family, "complete_task", taskId="t1", childId="emma")
+    oscar = act(family, "complete_task", taskId="t1", childId="oscar")
+    act(family, "create_task", id="t2", title="Walk the dog", amountOre=300, recurrence="daily")
+    unseen = act(family, "complete_task", taskId="t2", childId="emma")
+
+    act(family, "approve_completions", completionIds=[emma["id"], oscar["id"], emma["id"]])
+    assert emma["status"] == "approved" and oscar["status"] == "approved"
+    # Arrived after the parent looked: still waiting.
+    assert unseen["status"] == "pending"
+    assert family.balance_ore("emma") == 500 and family.balance_ore("oscar") == 500
+
+    # Idempotent: a retry (or the other parent) changes nothing.
+    act(family, "approve_completions", completionIds=[emma["id"], oscar["id"]])
+    assert family.balance_ore("emma") == 500
+
+
+def test_approve_all_is_all_or_nothing(family: Family) -> None:
+    emma = act(family, "complete_task", taskId="t1", childId="emma")
+    oscar = act(family, "complete_task", taskId="t1", childId="oscar")
+    # The other parent rejected one meanwhile: nothing is approved.
+    act(family, "reject_completion", completionId=oscar["id"])
+    with pytest.raises(FamilyError, match="already been handled"):
+        act(family, "approve_completions", completionIds=[emma["id"], oscar["id"]])
+    assert emma["status"] == "pending"
+    with pytest.raises(FamilyError) as err:
+        act(family, "approve_completions", completionIds=[emma["id"], "nope"])
+    assert err.value.key == "completion_not_found"
+    assert emma["status"] == "pending"
+    for bad in ([], None, "c1", [1], [""]):
+        with pytest.raises(FamilyError) as err:
+            act(family, "approve_completions", completionIds=bad)
+        assert err.value.key == "missing_field"
+
 def test_late_uses_ha_clock(family: Family) -> None:
     evening = NOW.replace(hour=19)
     # The tablet's own time is ignored: HA's clock decides whether it is late.

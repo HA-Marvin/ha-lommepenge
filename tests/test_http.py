@@ -223,6 +223,9 @@ async def test_child_tablet_is_limited(
     pending = config_entry.runtime_data.family.data["completions"][0]
     response = await tablet.action("approve_completion", {"completionId": pending["id"]})
     assert response.status == 403
+    response = await tablet.action("approve_completions", {"completionIds": [pending["id"]]})
+    assert response.status == 403
+    assert pending["status"] == "pending"
     assert (await tablet.action("add_child", {"name": "Hacker"})).status == 403
     # Locks are for parents to lift.
     assert (await tablet.action("lift_lock", {"childId": "emma"})).status == 403
@@ -472,6 +475,9 @@ async def test_state_is_the_current_view(
     assert [t["id"] for t in state["tasks"]] == ["t1"]
     assert state["settings"]["defaultDueTime"] == "18:00"
     assert "completions" not in state and "balanceAdjustments" not in state
+    # A parent's phone opens parent mode without a PIN (Del H5): only the
+    # family screen gets the PIN.
+    assert "pinHash" not in state and "pinSalt" not in state
 
     response = await parent.action("approve_completion", {"completionId": "app-c1"})
     state = await response.json()
@@ -485,6 +491,11 @@ async def test_state_is_the_current_view(
     response = await parent.action("reject_completion", {"completionId": "app-c1"})
     assert response.status == 400
     assert (await response.json())["code"] == "completion_already_handled"
+
+    # "Approve all" (Del H5) answers with the new state, like the other actions.
+    response = await parent.action("approve_completions", {"completionIds": ["app-c1"]})
+    assert response.status == 200
+    assert (await response.json())["approvals"] == []
 
 
 async def test_history_on_request(

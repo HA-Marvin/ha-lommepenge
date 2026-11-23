@@ -37,6 +37,7 @@ from .const import (
     DOMAIN,
     PAIRING_TTL,
     ROLE_CHILD,
+    ROLE_SCREEN,
     SIGNATURE_MAX_AGE,
     SUBENTRY_DEVICE,
 )
@@ -236,7 +237,10 @@ class LommepengeRuntime:
             )
         else:
             state = self.family.state_json(self.family_name, local_now(), language=language)
-            # The parent part on the screen and phones is locked with the family's PIN.
+        if device["role"] == ROLE_SCREEN:
+            # Only the family screen (shared, e.g. on the fridge) locks its
+            # parent part with the family's PIN. A parent's phone opens
+            # parent mode without one (Del H5).
             state["pinHash"] = self.entry.data.get(CONF_PIN_HASH)
             state["pinSalt"] = self.entry.data.get(CONF_PIN_SALT)
         state["currency"] = self.currency

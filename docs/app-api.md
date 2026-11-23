@@ -279,7 +279,9 @@ only for the child's tablet) – plus:
   are gone.
 - `pinHash`/`pinSalt`: the parent PIN for the family screen's parent mode.
   A PIN is correct when `lowercase hex SHA-256(UTF-8 of pinSalt + ":" + pin)`
-  equals `pinHash`. Never sent to a child's tablet.
+  equals `pinHash`. **Only sent to the family screen** (Del H5): a parent's
+  phone opens parent mode without a PIN, and a child's tablet has no parent
+  mode.
 
 ### Task entries (`children[].tasks`)
 
@@ -436,6 +438,7 @@ a child's tablet (`403` from the family screen and parents' phones).
 | --- | --- | --- |
 | `complete_task` | `taskId`, `childId`, `completionId` | Idempotent, see below. HA's clock decides the time and `late`. |
 | `approve_completion` | `completionId` | Parent. |
+| `approve_completions` | `completionIds` (non-empty list) | Parent. "Approve all" (Del H5): approves exactly the listed completions – the ones the parent saw – so one that arrived meanwhile stays pending. All or nothing: an unknown id → `400 completion_not_found`, one rejected meanwhile → `400 completion_already_handled`, and then nothing is approved. |
 | `reject_completion` | `completionId`, `reason` (optional text, max 500 characters) | Parent. The child gets a `rejected` notification with the reason; a mandatory task causes a lock. |
 | `create_task` | `id`, `title`, `amountOre`, `recurrence`, `mandatory`, `description`, `activeWeekdays`, `assignedChildIds`, `startTime`, `dueTime`, `showInCalendar` | `title` and integer `amountOre` ≥ 0 required. Unknown `recurrence` → `once`. `once` ignores `activeWeekdays`. |
 | `update_task` | `id` + the same fields | `title`, `amountOre` required. A missing key keeps the old value; explicit `null` clears it (`activeWeekdays`, `assignedChildIds`, `startTime`, `dueTime`). `description` is always replaced. |
@@ -466,6 +469,8 @@ The app may resend an action after a timeout or lost response. HA guarantees:
   no change (also when the other parent answered the same). The opposite
   answer after a decision → `400 completion_already_handled` (the first answer
   counts).
+- `approve_completions` with ids that are already approved → `200`, no change
+  for those (a retry approves nothing twice).
 - `create_task`, `add_child`, `adjust_balance` with an `id` that already exists
   do not create duplicates (`create_task` replaces the fields; the original
   creation time is kept). Always send an app-made `id`.

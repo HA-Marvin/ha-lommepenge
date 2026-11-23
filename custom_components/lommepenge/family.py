@@ -990,6 +990,30 @@ class Family:
     def _action_approve_completion(self, payload: dict[str, Any], now: datetime) -> dict[str, Any]:
         return self._decide(payload, "approved", now)
 
+    def _action_approve_completions(self, payload: dict[str, Any], now: datetime) -> None:
+        """The "Approve all" button (Del H5): approves exactly the
+        `completionIds` the parent saw, so a completion that arrived meanwhile
+        is not approved unseen. All or nothing: if one of them is unknown or was rejected
+        meanwhile (e.g. by the other parent), nothing is approved and the
+        parent sees the new list. Already approved ones are fine (a retry)."""
+        ids = payload.get("completionIds")
+        if (
+            not isinstance(ids, list)
+            or not ids
+            or not all(isinstance(i, str) and i.strip() for i in ids)
+        ):
+            raise FamilyError("missing_field", field="completionIds")
+        completions = []
+        for completion_id in dict.fromkeys(ids):
+            completion = self.completion(completion_id)
+            if completion is None:
+                raise FamilyError("completion_not_found")
+            if completion["status"] not in ("pending", "approved"):
+                raise FamilyError("completion_already_handled")
+            completions.append(completion)
+        for completion in completions:
+            self._decide({"completionId": completion["id"]}, "approved", now)
+
     def _action_reject_completion(self, payload: dict[str, Any], now: datetime) -> dict[str, Any]:
         """Rejects, with the parent's optional `reason`. The child is told,
         and a rejected mandatory task locks the tablet (Del H4)."""
