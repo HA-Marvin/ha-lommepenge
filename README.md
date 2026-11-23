@@ -11,6 +11,7 @@ number:
 - `custom_components/lommepenge` – the integration (installed via HACS/Marketplace)
 - `app/` – the Android app (Flutter), see [app/README.md](app/README.md)
 - `blueprints/` – automations for approval and restriction
+- `docs/app-api.md` – the API between Home Assistant and the app
 
 Every release has both the integration and the signed APK, which HA fetches
 and hands on to the family's devices.

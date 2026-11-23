@@ -1,0 +1,427 @@
+# Lommepenge app API (Home Assistant ⇄ app)
+
+This is the contract between the Lommepenge integration in Home Assistant (the
+server) and the Android app (the client). The app is a **pure view of HA**: it
+stores no history, applies no rules and keeps only HA's latest response in
+memory. Every action needs a connection and takes effect only when HA has
+confirmed it. There is no offline queue.
+
+All endpoints live under `/api/lommepenge` on HA's local address (for example
+`http://192.168.1.10:8123/api/lommepenge`) and only answer requests from the
+home network. HA's own users and tokens are never used.
+
+| Method | Path | Signed | Purpose |
+| --- | --- | --- | --- |
+| `POST` | `/api/lommepenge/pair` | no | Exchange a pairing code for the device's key |
+| `GET` | `/api/lommepenge/state` | yes | The current state |
+| `POST` | `/api/lommepenge/action` | yes | Perform an action; returns the new state |
+| `GET` | `/api/lommepenge/history` | yes | History, 30 days per page |
+| `GET` | `/api/lommepenge/apk` | yes | The newest APK (app update) |
+
+The install page, QR code and first-time APK download
+(`/api/lommepenge`, `/install/{code}`, `/qr/{code}.svg`, `/download/{code}/…`,
+`/app.apk`) are for browsers and are not described here.
+
+## Conventions
+
+- **JSON** everywhere, UTF-8. The app must ignore fields it does not know; new
+  fields can be added at any time (for example a per-child `lock`, see
+  [Coming later](#coming-later)).
+- **Amounts** are integers in 1/100 of the family's currency (`…Ore` fields,
+  e.g. `500` = 5.00). The currency text is in `state.currency` (e.g. `"DKK"`).
+- **Times** (`now`, `deadline`, `completedAt`, `at`, …) are HA's **local** time
+  as ISO 8601 **without** a UTC offset and with milliseconds, e.g.
+  `"2026-11-23T18:00:00.000"`. Show them as they are; do not convert time zones.
+- **Dates** are `"YYYY-MM-DD"` in HA's local time. Times of day are `"HH:MM"`.
+- **Ids** are strings. Ids the app creates (completions, tasks, children,
+  adjustments) should be UUID v4 and at most 100 characters.
+- **Language:** send the app's chosen language in `X-Lommepenge-Language`
+  (`en`, `da`, `de`, `es`, `fr`) on every request; HA writes `error` texts in
+  that language.
+
+## Signing
+
+Every signed request carries these headers:
+
+| Header | Value |
+| --- | --- |
+| `X-Device-Id` | `deviceId` from pairing |
+| `X-Timestamp` | Unix time in seconds (corrected, see below) |
+| `X-Signature` | lowercase hex HMAC-SHA256, see below |
+| `X-App-Version` | e.g. `0.5.0` (optional, shown in HA) |
+| `X-App-Version-Code` | e.g. `500` (optional, used for updates) |
+| `X-Lommepenge-Language` | the app's language (optional) |
+
+The signature is `HMAC-SHA256(key = deviceKey as UTF-8, message)` where
+
+```
+message = timestamp + "\n" + METHOD + "\n" + pathAndQuery + "\n" + body
+```
+
+- `METHOD` is upper case (`GET`, `POST`).
+- `pathAndQuery` is the request target **exactly as sent**, including the query
+  string if there is one, e.g. `/api/lommepenge/history?before=2026-10-25`.
+  Build query strings yourself from the parameters below (their values only
+  contain `A–Z a–z 0–9 - _ ,`) so that the bytes you sign are the bytes sent.
+- `body` is the raw request body (empty for `GET`).
+
+A request older or newer than 5 minutes (by HA's clock) is refused with
+`clock_skew`.
+
+**Clock correction.** Every 401 response contains `serverTime` (HA's Unix time
+in seconds). On `clock_skew` the app stores `offset = serverTime - deviceTime`,
+signs with `deviceTime + offset` from then on, and retries once. A wrong clock
+must never lead to a new pairing.
+
+## Errors
+
+Every error response from the endpoints above is JSON:
+
+```json
+{ "error": "The task cannot be marked as done right now.", "code": "task_not_available" }
+```
+
+`error` is a human-readable text for the user (in the app's language). `code`
+is stable; the app decides what to do from the HTTP status and `code` only.
+
+| Status | `code` | Meaning / what the app does |
+| --- | --- | --- |
+| 400 | `invalid_request` | Malformed request (pair body, history query). |
+| 400 | `invalid_action` | The action body is not a JSON object. |
+| 400 | action error, see [Action errors](#action-errors) | The action is not valid in the current state. Show `error`; nothing changed. |
+| 401 | `device_not_connected` | Unknown or revoked device: forget the pairing and show "Connect to Home Assistant". |
+| 401 | `invalid_signature` | Wrong key: same as above. |
+| 401 | `missing_timestamp` | Bug in the app (no/invalid `X-Timestamp`). |
+| 401 | `clock_skew` | Correct the clock with `serverTime` and retry. Never unpair. |
+| 403 | `forbidden_action` | The device's role may not do this (e.g. a child's tablet). |
+| 404 | – | Not found (APK not fetched yet: `app_not_fetched`). |
+| 410 | `pairing_invalid` | Pairing code wrong, expired or used. |
+| 413 | `request_too_large` | Body over 64 KiB. |
+| 429 | `too_many_pairings` | Too many wrong codes; wait five minutes. |
+| 502 | – | HA could not fetch the APK from GitHub (`app_fetch_failed`). |
+
+401 responses additionally have `"serverTime": 1795442400`.
+
+Two responses are **plain text**, not JSON: `403` *Only available on the home
+network* (request not from the local network) and `503` *Lommepenge is not set
+up* (integration not loaded). The APK errors (404/502) are plain text too.
+Treat any non-JSON response or a network failure/timeout as "No connection to
+Home Assistant – try again" and change nothing locally.
+
+## Pairing
+
+`POST /api/lommepenge/pair` (not signed)
+
+```json
+{ "token": "ABCD2345", "appVersion": "0.5.0", "appVersionCode": 500 }
+```
+
+`token` is the 8-character code from *Add device* in HA (case, spaces and
+dashes are ignored). Response `200`:
+
+```json
+{
+  "deviceId": "8c0f…",
+  "deviceKey": "64 hex characters",
+  "role": "child",
+  "childId": "emma-uuid",
+  "deviceName": "Emma's tablet",
+  "familyName": "The Family"
+}
+```
+
+`role` is `screen` (family screen), `parent` (parent's phone) or `child`
+(child's tablet, with `childId`). Errors: `400 invalid_request`,
+`410 pairing_invalid`, `429 too_many_pairings`.
+
+## State
+
+`GET /api/lommepenge/state` (signed). Poll every 30 seconds and when the app
+comes to the foreground. The same object is returned by every successful
+action.
+
+### Child's tablet (`role = child`)
+
+```json
+{
+  "familyName": "The Family",
+  "now": "2026-11-23T12:00:00.000",
+  "today": "2026-11-23",
+  "children": [
+    {
+      "id": "emma-uuid",
+      "name": "Emma",
+      "sortOrder": 0,
+      "balanceOre": 2500,
+      "earnedThisWeekOre": 1000,
+      "tasks": [
+        {
+          "taskId": "t1",
+          "title": "Empty the dishwasher",
+          "description": null,
+          "amountOre": 500,
+          "recurrence": "daily",
+          "mandatory": true,
+          "startTime": null,
+          "dueTime": null,
+          "date": "2026-11-23",
+          "deadline": "2026-11-23T18:00:00.000",
+          "status": "available",
+          "completionId": null,
+          "late": false
+        }
+      ]
+    }
+  ],
+  "currency": "DKK",
+  "device": { "id": "8c0f…", "name": "Emma's tablet", "role": "child", "childId": "emma-uuid" },
+  "appUpdate": { "version": "0.5.0", "versionCode": 500, "sha256": "…", "size": 21345678 }
+}
+```
+
+`children` contains only the tablet's own child. `appUpdate` is `null` when HA
+has not fetched a release.
+
+### Family screen and parent's phone (`role = screen | parent`)
+
+The same fields, with **all** children in `children` (sorted), plus:
+
+```json
+{
+  "approvals": [
+    {
+      "completionId": "app-uuid",
+      "childId": "emma-uuid",
+      "childName": "Emma",
+      "taskId": "t1",
+      "taskTitle": "Empty the dishwasher",
+      "amountOre": 500,
+      "completedAt": "2026-11-23T18:20:00.000",
+      "late": true
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t1",
+      "title": "Empty the dishwasher",
+      "description": null,
+      "amountOre": 500,
+      "recurrence": "daily",
+      "mandatory": true,
+      "activeWeekdays": [1, 2, 3, 4, 5],
+      "assignedChildIds": null,
+      "startTime": null,
+      "dueTime": "17:30",
+      "showInCalendar": false,
+      "createdAt": "2026-11-01T10:00:00.000"
+    }
+  ],
+  "settings": {
+    "defaultDueTime": "18:00",
+    "restrictionStart": "15:00",
+    "restrictionEnd": "21:00",
+    "latePauseMinutes": 10,
+    "warningMinutes": 60,
+    "winterFromWeek": 43,
+    "winterToWeek": 13
+  },
+  "pinHash": "…",
+  "pinSalt": "…"
+}
+```
+
+- `approvals`: pending completions, oldest first (the approval page).
+- `tasks`: the active tasks with all fields, for the edit screens.
+  `activeWeekdays` is `null` (every day) or ISO weekdays 1 = Monday … 7 = Sunday.
+  `assignedChildIds` is `null` (all children) or a list of child ids.
+- `settings`: see `set_setting`. (`restrictionStart`/`restrictionEnd` are being
+  removed with the new locks; ignore them.)
+- `pinHash`/`pinSalt`: the parent PIN for the family screen's parent mode.
+  A PIN is correct when `lowercase hex SHA-256(UTF-8 of pinSalt + ":" + pin)`
+  equals `pinHash`. Never sent to a child's tablet.
+
+### Task entries (`children[].tasks`)
+
+HA calculates one entry **per task** for the child, sorted by `date`, then
+status (overdue, available, awaiting approval, upcoming), then deadline, then
+title. The app shows them as they are and calculates nothing.
+
+| Field | Meaning |
+| --- | --- |
+| `taskId`, `title`, `description`, `recurrence`, `mandatory`, `startTime`, `dueTime` | From the task. `recurrence`: `once`, `daily`, `weekly`, `unlimited`. |
+| `amountOre` | What the task gives (for a pending completion: the amount when it was done). |
+| `date` | The day of this occurrence. |
+| `deadline` | When the occurrence is late, or `null` (optional tasks have no deadline). `dueTime` of the task, else `settings.defaultDueTime`, on `date`. |
+| `status` | `available`, `overdue`, `awaitingApproval` or `upcoming`. |
+| `completionId` | The pending completion when `awaitingApproval`, else `null`. |
+| `late` | `true` when the pending completion was done after the deadline. |
+
+Status:
+
+- `available` – can be marked as done now (button enabled).
+- `overdue` – the deadline has passed; it can still be marked as done (the
+  completion is then `late`). Disappears at midnight if not done.
+- `awaitingApproval` – done, waiting for a parent. One entry stays until it is
+  handled.
+- `upcoming` – a later day within the horizon; cannot be marked as done yet.
+
+Rules HA applies (for understanding; the app does not repeat them):
+
+- **Horizon:** entries are only sent for `today` and the next 4 days (5
+  calendar days). A task whose next occurrence is further away is not in the
+  list at all.
+- **Approved or rejected** → the entry moves on to the task's next normal
+  occurrence (daily: the next active day; weekly: 7 days after the day it was
+  done). A rejected **one-off** task becomes `available` again; an approved one
+  is gone.
+- **Weekly** = 7 rolling days after the day the last handled completion was
+  done, or after a missed deadline.
+- **Unlimited** tasks are always `available` (one pending at a time). A
+  mandatory one has a deadline until it has been done that day.
+- A **one-off** task can be done before its `date`; its deadline is the first
+  deadline after it was created.
+- A new task (or new child) is never overdue at once: an occurrence whose
+  deadline had passed before the task existed is skipped.
+- **Midnight:** every late, not done occurrence is removed without money and
+  recorded as `missed` in the history. A missed one-off task is gone for good
+  (a parent must create it again). A missed weekly task returns 7 days after
+  the missed deadline. Awaiting-approval entries are never removed.
+
+## Actions
+
+`POST /api/lommepenge/action` (signed), body:
+
+```json
+{ "type": "complete_task", "payload": { "taskId": "t1", "childId": "emma-uuid", "completionId": "app-uuid" } }
+```
+
+On success the response is `200` with the **new state** (exactly as
+`GET /state` for this device). The app shows a spinner while waiting and
+updates the screen from this response only; on an error or no connection it
+changes nothing locally.
+
+A child's tablet may only send `complete_task` for its own child; everything
+else gives `403 forbidden_action`.
+
+| `type` | `payload` | Notes |
+| --- | --- | --- |
+| `complete_task` | `taskId`, `childId`, `completionId` | Idempotent, see below. HA's clock decides the time and `late`. |
+| `approve_completion` | `completionId` | Parent. |
+| `reject_completion` | `completionId` | Parent. |
+| `create_task` | `id`, `title`, `amountOre`, `recurrence`, `mandatory`, `description`, `activeWeekdays`, `assignedChildIds`, `startTime`, `dueTime`, `showInCalendar` | `title` and integer `amountOre` ≥ 0 required. Unknown `recurrence` → `once`. `once` ignores `activeWeekdays`. |
+| `update_task` | `id` + the same fields | `title`, `amountOre` required. A missing key keeps the old value; explicit `null` clears it (`activeWeekdays`, `assignedChildIds`, `startTime`, `dueTime`). `description` is always replaced. |
+| `delete_task` | `id` | Deactivates the task (history keeps it). |
+| `add_child` | `id`, `name` | |
+| `rename_child` | `id`, `name` | |
+| `delete_child` | `id` | |
+| `adjust_balance` | `id`, `childId`, `amountOre` (may be negative), `note` (required) | |
+| `mark_paid_out` | `childId` | Balance becomes 0. |
+| `set_setting` | `key`, `value` | Keys: `defaultDueTime` (`"HH:MM"`), `latePauseMinutes` (0–240), `warningMinutes` (0–600), `winterFromWeek`/`winterToWeek` (1–53). |
+| `suspend_restriction` | `childId` | Old restriction model; will be replaced by the locks. |
+
+### Idempotency (retries)
+
+The app may resend an action after a timeout or lost response. HA guarantees:
+
+- `complete_task` with a `completionId` HA already knows returns `200` and the
+  current state **without** creating another completion – also if that
+  completion has since been approved or rejected. Therefore the app creates
+  the `completionId` (UUID v4) **once per tap** and reuses it for every retry
+  of that tap.
+- `approve_completion`/`reject_completion` with the same answer again → `200`,
+  no change (also when the other parent answered the same). The opposite
+  answer after a decision → `400 completion_already_handled` (the first answer
+  counts).
+- `create_task`, `add_child`, `adjust_balance` with an `id` that already exists
+  do not create duplicates (`create_task` replaces the fields; the original
+  creation time is kept). Always send an app-made `id`.
+- `delete_task`, `delete_child`, `update_task`, `rename_child`,
+  `mark_paid_out` and `set_setting` can safely be repeated.
+
+### Action errors
+
+All `400` with the `code` below (text in `error`):
+
+| `code` | When |
+| --- | --- |
+| `unknown_action` | Unknown `type`. |
+| `missing_field` | A required field is missing/invalid (e.g. `amountOre`, `completionId` over 100 characters). |
+| `missing_id`, `missing_child_id`, `missing_task`, `missing_completion`, `missing_setting` | The named field is missing. |
+| `task_title_required`, `negative_amount`, `child_name_required`, `adjustment_note_required` | Validation. |
+| `task_not_found` | The task does not exist or is deleted/missed. |
+| `task_not_assigned` | The task is not for this child. |
+| `task_not_available` | The entry is `upcoming` or `awaitingApproval`, or a done one-off task. |
+| `completion_not_found`, `completion_already_handled` | See idempotency. |
+| `child_not_found` | Unknown child. |
+| `invalid_time`, `setting_out_of_range`, `unknown_setting` | `set_setting`. |
+
+## History
+
+`GET /api/lommepenge/history` (signed). Fetched when the history page is
+opened and never stored on the device.
+
+Query parameters (all optional):
+
+| Parameter | Meaning |
+| --- | --- |
+| `before` | `YYYY-MM-DD`, exclusive end of the page. Default: tomorrow (the page includes today). |
+| `childId` | Only this child. A child's tablet always gets only its own child; asking for another child gives `403 forbidden_action`. |
+| `types` | Comma-separated filter, e.g. `approved,rejected`. Allowed: `approved`, `rejected`, `adjustment`, `missed`. An unknown type gives `400 invalid_request`. |
+
+Remember that the query string is part of the signed path.
+
+Response `200`:
+
+```json
+{
+  "from": "2026-10-25",
+  "before": "2026-11-24",
+  "items": [
+    {
+      "id": "app-uuid",
+      "type": "approved",
+      "at": "2026-11-23T19:02:11.000",
+      "childId": "emma-uuid",
+      "childName": "Emma",
+      "taskId": "t1",
+      "taskTitle": "Empty the dishwasher",
+      "amountOre": 500,
+      "completedAt": "2026-11-23T18:20:00.000",
+      "late": true,
+      "note": null
+    }
+  ],
+  "nextBefore": "2026-10-25"
+}
+```
+
+- A page covers the 30 days `from` ≤ day < `before`, newest first.
+- **"Show older"** = request again with `before = nextBefore`. `nextBefore` is
+  `null` when nothing older exists (hide the button). A page can be empty while
+  `nextBefore` is not `null` (a quiet month).
+- Item types:
+
+| `type` | `at` | Fields |
+| --- | --- | --- |
+| `approved` | when it was approved | task fields, `amountOre`, `completedAt`, `late` |
+| `rejected` | when it was rejected (older data: when it was done) | as `approved`; gave no money |
+| `adjustment` | when it was made | `amountOre` (signed), `note`; `taskId`/`taskTitle`/`completedAt` are `null` |
+| `missed` | the missed deadline | task fields, `amountOre` it would have given; `completedAt` is `null` |
+
+`childName`/`taskTitle` are the current names (empty string / `null` if the
+child or task no longer exists). Pending completions are not history (they
+are in `approvals` and the task entries). There is no payout history.
+
+## App update
+
+`GET /api/lommepenge/apk` (signed) streams the APK described by
+`state.appUpdate`. Check its SHA-256 against `appUpdate.sha256` before
+installing.
+
+## Coming later
+
+These will be added to the payloads without breaking the fields above:
+
+- a per-child `lock` object in `state.children[]` (locks, Del H4);
+- history type `lock` (and the `types` filter value `lock`);
+- notifications for the child (Del H3).

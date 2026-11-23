@@ -526,7 +526,7 @@ class Family:
         ]
         state: dict[str, Any] = {
             "familyName": family_name,
-            "serverTime": logic.to_iso(now),
+            "now": logic.to_iso(now),  # HA's local time (not the Unix `serverTime` of a 401)
             "today": logic.date_key(now),
             "children": [
                 {

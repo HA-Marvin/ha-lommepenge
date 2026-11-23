@@ -389,7 +389,7 @@ async def test_state_is_the_current_view(
     assert len(config_entry.runtime_data.family.data["completions"]) == 1
 
     assert state["today"] == "2026-11-23"
-    assert state["serverTime"].startswith("2026-11-23T12:00")
+    assert state["now"].startswith("2026-11-23T12:00")
     assert [c["name"] for c in state["children"]] == ["Emma"]
     for key in ("approvals", "tasks", "settings", "pinHash", "completions", "balanceAdjustments"):
         assert key not in state
