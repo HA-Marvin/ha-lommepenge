@@ -49,31 +49,10 @@ class SettingsTabContent extends StatelessWidget {
     String label,
     int current,
   ) async {
-    final controller = TextEditingController(text: '$current');
     final value = await showDialog<int>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(label),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(ctx.l10n.cancel),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop(int.tryParse(controller.text)),
-            child: Text(ctx.l10n.save),
-          ),
-        ],
-      ),
+      builder: (_) => _NumberDialog(label: label, current: current),
     );
-    controller.dispose();
     if (value == null || !context.mounted) return;
     await _save(context, key, value);
   }
@@ -235,6 +214,53 @@ class _ConnectionSection extends StatelessWidget {
           const SizedBox(height: 24),
         ],
       ),
+    );
+  }
+}
+
+/// Asks for a whole number; returns it, or `null` when cancelled. Owns its
+/// text controller, so it lives as long as the dialog's closing animation
+/// (disposing it right after `showDialog` returns crashed that animation).
+class _NumberDialog extends StatefulWidget {
+  final String label;
+  final int current;
+
+  const _NumberDialog({required this.label, required this.current});
+
+  @override
+  State<_NumberDialog> createState() => _NumberDialogState();
+}
+
+class _NumberDialogState extends State<_NumberDialog> {
+  late final _controller = TextEditingController(text: '${widget.current}');
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.label),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(context.l10n.cancel),
+        ),
+        FilledButton(
+          onPressed: () =>
+              Navigator.of(context).pop(int.tryParse(_controller.text)),
+          child: Text(context.l10n.save),
+        ),
+      ],
     );
   }
 }
