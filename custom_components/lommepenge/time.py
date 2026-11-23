@@ -17,8 +17,6 @@ from .entity import LommepengeEntity
 # HA key -> the app's setting key (see FamilySettings in the app).
 TIME_SETTINGS = {
     "default_due_time": "defaultDueTime",
-    "restriction_start": "restrictionStart",
-    "restriction_end": "restrictionEnd",
 }
 
 

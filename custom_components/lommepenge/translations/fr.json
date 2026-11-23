@@ -134,22 +134,24 @@
       }
     },
     "button": {
-      "suspend_restriction": {
-        "name": "Lever le blocage aujourd'hui"
+      "lift_lock": {
+        "name": "Lever le blocage"
+      }
+    },
+    "switch": {
+      "paused": {
+        "name": "Tâches en pause"
       }
     },
     "time": {
       "default_due_time": {
         "name": "Échéance par défaut"
-      },
-      "restriction_start": {
-        "name": "Blocage à partir de"
-      },
-      "restriction_end": {
-        "name": "Blocage jusqu'à"
       }
     },
     "number": {
+      "lock_minutes": {
+        "name": "Durée du blocage"
+      },
       "late_pause_minutes": {
         "name": "Pause en cas de retard"
       },
@@ -192,12 +194,40 @@
         "completion_id": {
           "name": "ID de réalisation",
           "description": "completionId de l'événement lommepenge_event."
+        },
+        "reason": {
+          "name": "Motif",
+          "description": "Facultatif. Affiché à l'enfant dans la notification."
         }
       }
     },
-    "suspend_restriction": {
-      "name": "Lever le blocage aujourd'hui",
-      "description": "Lève le blocage de l'enfant pour le reste de la journée.",
+    "lift_lock": {
+      "name": "Lever le blocage",
+      "description": "Lève le blocage en attente et en cours de l'enfant. De nouvelles tâches en retard ou refusées peuvent à nouveau bloquer la tablette.",
+      "fields": {
+        "child_id": {
+          "name": "ID de l'enfant",
+          "description": "L'attribut child_id du capteur « Tablette bloquée » de l'enfant."
+        }
+      }
+    },
+    "pause": {
+      "name": "Mettre les tâches en pause",
+      "description": "Met l'enfant en pause : aucune tâche n'est obligatoire (pas d'échéance, pas de blocage), mais les tâches rapportent toujours de l'argent. Lève aussi le blocage de l'enfant.",
+      "fields": {
+        "child_id": {
+          "name": "ID de l'enfant",
+          "description": "L'attribut child_id du capteur « Tablette bloquée » de l'enfant."
+        },
+        "until": {
+          "name": "Jusqu'au",
+          "description": "La date à laquelle les tâches redeviennent obligatoires (dès minuit). Vide = jusqu'à la reprise."
+        }
+      }
+    },
+    "resume": {
+      "name": "Reprendre les tâches",
+      "description": "Termine la pause de l'enfant : les tâches redeviennent obligatoires dès maintenant.",
       "fields": {
         "child_id": {
           "name": "ID de l'enfant",

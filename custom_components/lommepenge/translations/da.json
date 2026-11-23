@@ -134,22 +134,24 @@
       }
     },
     "button": {
-      "suspend_restriction": {
-        "name": "Ophæv spærring i dag"
+      "lift_lock": {
+        "name": "Ophæv lås"
+      }
+    },
+    "switch": {
+      "paused": {
+        "name": "Opgaver på pause"
       }
     },
     "time": {
       "default_due_time": {
         "name": "Standardfrist"
-      },
-      "restriction_start": {
-        "name": "Spærretid fra"
-      },
-      "restriction_end": {
-        "name": "Spærretid til"
       }
     },
     "number": {
+      "lock_minutes": {
+        "name": "Låsens varighed"
+      },
       "late_pause_minutes": {
         "name": "Pausetid ved for sent"
       },
@@ -192,12 +194,40 @@
         "completion_id": {
           "name": "Udførelses-id",
           "description": "completionId fra hændelsen lommepenge_event."
+        },
+        "reason": {
+          "name": "Begrundelse",
+          "description": "Valgfri. Vises for barnet i notifikationen."
         }
       }
     },
-    "suspend_restriction": {
-      "name": "Ophæv spærring i dag",
-      "description": "Ophæver barnets spærring resten af dagen.",
+    "lift_lock": {
+      "name": "Ophæv lås",
+      "description": "Rydder barnets ventende og kørende lås. Nye forsinkede eller afviste opgaver kan låse tabletten igen.",
+      "fields": {
+        "child_id": {
+          "name": "Barn-id",
+          "description": "Attributten child_id på barnets sensor \"Tablet spærret\"."
+        }
+      }
+    },
+    "pause": {
+      "name": "Sæt opgaver på pause",
+      "description": "Sætter barnet på pause: ingen opgave er obligatorisk (ingen frist, ingen lås), men opgaverne giver stadig penge. Ophæver også barnets lås.",
+      "fields": {
+        "child_id": {
+          "name": "Barn-id",
+          "description": "Attributten child_id på barnets sensor \"Tablet spærret\"."
+        },
+        "until": {
+          "name": "Indtil",
+          "description": "Datoen hvor opgaverne er obligatoriske igen (fra midnat). Tom = indtil pausen ophæves."
+        }
+      }
+    },
+    "resume": {
+      "name": "Genoptag opgaver",
+      "description": "Afslutter barnets pause: opgaverne er obligatoriske igen fra nu.",
       "fields": {
         "child_id": {
           "name": "Barn-id",

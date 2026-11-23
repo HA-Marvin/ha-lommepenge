@@ -1,6 +1,6 @@
 """Lommepenge: the family's tasks and pocket money with Home Assistant as the server.
 
-HA stores the family's data, calculates follow-up and restrictions, and is the
+HA stores the family's data, calculates task lists and locks, and is the
 only place the app (family screen, parents' phones and children's tablets)
 talks to. Devices are added under the integration with a code, and the app and
 its updates are also fetched from HA.
@@ -15,20 +15,28 @@ import voluptuous as vol
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import config_validation as cv, device_registry as dr
+from homeassistant.helpers import (
+    config_validation as cv,
+    device_registry as dr,
+    entity_registry as er,
+)
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     ATTR_CHILD_ID,
     ATTR_COMPLETION_ID,
+    ATTR_REASON,
+    ATTR_UNTIL,
     CONF_GITHUB_REPO,
     CONF_GITHUB_TOKEN,
     CONF_LANGUAGE,
     DEFAULT_GITHUB_REPO,
     DOMAIN,
     SERVICE_APPROVE,
+    SERVICE_LIFT_LOCK,
+    SERVICE_PAUSE,
     SERVICE_REJECT,
-    SERVICE_SUSPEND_RESTRICTION,
+    SERVICE_RESUME,
 )
 from .coordinator import LommepengeConfigEntry, LommepengeCoordinator
 from .entity import child_device_identifier, child_device_name
@@ -45,11 +53,15 @@ PLATFORMS = [
     Platform.BUTTON,
     Platform.NUMBER,
     Platform.SENSOR,
+    Platform.SWITCH,
     Platform.TIME,
     Platform.UPDATE,
 ]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+# Entities that no longer exist (unique ids end with these keys).
+_REMOVED_ENTITY_KEYS = ("_restriction_start", "_restriction_end", "_suspend_restriction")
 
 
 def action_error(runtime: LommepengeRuntime, err: FamilyError) -> HomeAssistantError:
@@ -78,18 +90,40 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         await _run("approve_completion", {"completionId": call.data[ATTR_COMPLETION_ID]})
 
     async def reject(call: ServiceCall) -> None:
-        await _run("reject_completion", {"completionId": call.data[ATTR_COMPLETION_ID]})
+        await _run(
+            "reject_completion",
+            {
+                "completionId": call.data[ATTR_COMPLETION_ID],
+                "reason": call.data.get(ATTR_REASON),
+            },
+        )
 
-    async def suspend_restriction(call: ServiceCall) -> None:
-        await _run("suspend_restriction", {"childId": call.data[ATTR_CHILD_ID]})
+    async def lift_lock(call: ServiceCall) -> None:
+        await _run("lift_lock", {"childId": call.data[ATTR_CHILD_ID]})
+
+    async def pause(call: ServiceCall) -> None:
+        until = call.data.get(ATTR_UNTIL)
+        await _run(
+            "set_pause",
+            {
+                "childId": call.data[ATTR_CHILD_ID],
+                "paused": True,
+                "until": until.isoformat() if until else None,
+            },
+        )
+
+    async def resume(call: ServiceCall) -> None:
+        await _run("set_pause", {"childId": call.data[ATTR_CHILD_ID], "paused": False})
 
     completion_schema = vol.Schema({vol.Required(ATTR_COMPLETION_ID): cv.string})
+    reject_schema = completion_schema.extend({vol.Optional(ATTR_REASON): cv.string})
     child_schema = vol.Schema({vol.Required(ATTR_CHILD_ID): cv.string})
+    pause_schema = child_schema.extend({vol.Optional(ATTR_UNTIL): cv.date})
     hass.services.async_register(DOMAIN, SERVICE_APPROVE, approve, completion_schema)
-    hass.services.async_register(DOMAIN, SERVICE_REJECT, reject, completion_schema)
-    hass.services.async_register(
-        DOMAIN, SERVICE_SUSPEND_RESTRICTION, suspend_restriction, child_schema
-    )
+    hass.services.async_register(DOMAIN, SERVICE_REJECT, reject, reject_schema)
+    hass.services.async_register(DOMAIN, SERVICE_LIFT_LOCK, lift_lock, child_schema)
+    hass.services.async_register(DOMAIN, SERVICE_PAUSE, pause, pause_schema)
+    hass.services.async_register(DOMAIN, SERVICE_RESUME, resume, child_schema)
     return True
 
 
@@ -158,6 +192,15 @@ async def async_migrate_entry(hass: HomeAssistant, entry: LommepengeConfigEntry)
         hass.config_entries.async_update_entry(
             entry, data={**entry.data, CONF_LANGUAGE: "da"}, minor_version=2
         )
+    if entry.version == 2 and entry.minor_version < 3:
+        # Del H4 removed the 15:00-21:00 restriction window and "lift the
+        # restriction today"; their entities would otherwise stay behind as
+        # unavailable.
+        ent_reg = er.async_get(hass)
+        for entity in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+            if entity.unique_id.endswith(_REMOVED_ENTITY_KEYS):
+                ent_reg.async_remove(entity.entity_id)
+        hass.config_entries.async_update_entry(entry, minor_version=3)
     return True
 
 

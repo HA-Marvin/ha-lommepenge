@@ -1,4 +1,4 @@
-"""Binary sensors per child: restricted and overdue."""
+"""Binary sensors per child: restricted (a lock runs) and overdue."""
 
 from __future__ import annotations
 
@@ -33,7 +33,11 @@ def _tasks(items: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
 
 
 class RestrictedSensor(LommepengeChildEntity, BinarySensorEntity):
-    """On = the child's tablet should be restricted now (e.g. drive a UniFi rule)."""
+    """On = a lock is running for the child (Del H4) - drives e.g. a UniFi rule.
+
+    A pending lock (waiting for the child to use the tablet) is off; the
+    attribute `lock_status` shows it.
+    """
 
     _attr_icon = "mdi:tablet-cellphone"
 
@@ -48,15 +52,18 @@ class RestrictedSensor(LommepengeChildEntity, BinarySensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         child = self.child or {}
+        lock = child.get("lock") or {}
         return {
             "child_id": self.child_id,
             "child_name": child.get("name"),
-            "reason": child.get("reason"),
+            "lock_status": lock.get("status", "none"),
+            "reason": lock.get("reason"),
+            "started_at": lock.get("startedAt"),
+            "ends_at": lock.get("endsAt"),
+            "pending_since": lock.get("pendingSince"),
+            "paused": child.get("paused", False),
             "overdue": _tasks(child.get("overdue")),
             "due_today": _tasks(child.get("dueToday")),
-            "late_pause_until": child.get("latePauseUntil"),
-            "suspended_today": child.get("suspended", False),
-            "in_restriction_window": child.get("inWindow", False),
         }
 
 

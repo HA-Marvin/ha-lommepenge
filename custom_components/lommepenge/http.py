@@ -414,7 +414,7 @@ class StateView(_SignedView):
 
     async def get(self, request: web.Request) -> web.Response:
         runtime, device = await self._device(request, b"")
-        return web.json_response(runtime.state_for(device))
+        return web.json_response(runtime.state_for(device, _language(request, runtime)))
 
 
 class ActionView(_SignedView):
@@ -446,7 +446,7 @@ class ActionView(_SignedView):
         except FamilyError as err:
             return _error(HTTPStatus.BAD_REQUEST, err.translate(language), err.key)
         # The new state: the app shows the result only now that HA has confirmed.
-        return web.json_response(runtime.state_for(device))
+        return web.json_response(runtime.state_for(device, language))
 
 
 class HistoryView(_SignedView):
@@ -475,7 +475,9 @@ class HistoryView(_SignedView):
                 HTTPStatus.BAD_REQUEST, translate("invalid_request", language), "invalid_request"
             )
         try:
-            history = runtime.history_for(device, before, query.get("childId") or None, types)
+            history = runtime.history_for(
+                device, before, query.get("childId") or None, types, language
+            )
         except ForbiddenError as err:
             return _error(HTTPStatus.FORBIDDEN, err.translate(language), err.key)
         return web.json_response(history)

@@ -25,8 +25,9 @@ class NumberSetting:
     icon: str
 
 
-# The limits must match the app's validation in FamilySettings.withValue.
+# The limits are the same as in `logic.validate_setting`.
 NUMBER_SETTINGS = (
+    NumberSetting("lock_minutes", "lockMinutes", 1, 480, UnitOfTime.MINUTES, "mdi:lock-clock"),
     NumberSetting("late_pause_minutes", "latePauseMinutes", 0, 240, UnitOfTime.MINUTES, "mdi:timer-sand"),
     NumberSetting("warning_minutes", "warningMinutes", 0, 600, UnitOfTime.MINUTES, "mdi:alarm"),
     NumberSetting("winter_from_week", "winterFromWeek", 1, 53, None, "mdi:snowflake"),

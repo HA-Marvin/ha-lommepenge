@@ -1,9 +1,10 @@
-"""The family's rules: occurrences, deadlines, restriction and the child's scope.
+"""The family's rules: occurrences, deadlines, settings and the child's scope.
 
 Pure functions without I/O. Originally a translation of the app's
-`logic/recurrence.dart`, `logic/follow_up.dart` and `logic/child_scope.dart`;
-since Del H only HA calculates and the app just shows HA's results. All
-times are naive, local `datetime`s (HA's local time).
+`logic/recurrence.dart` and `logic/child_scope.dart`; since Del H only HA
+calculates and the app just shows HA's results. The locks (Del H4) live in
+`family.py`, because they need the family's stored state. All times are
+naive, local `datetime`s (HA's local time).
 """
 
 from __future__ import annotations
@@ -11,14 +12,9 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from .i18n import LocalizedError, translate
+from .i18n import LocalizedError
 
 AVAILABLE = "available"
-PENDING_APPROVAL = "pendingApproval"
-DONE_TODAY = "doneToday"
-DONE_THIS_WEEK = "doneThisWeek"
-COMPLETED_ONCE = "completedOnce"
-NOT_SCHEDULED_TODAY = "notScheduledToday"
 
 RECURRENCES = ("once", "daily", "weekly", "unlimited")
 
@@ -106,34 +102,6 @@ def is_active_on(task: dict[str, Any], day: datetime) -> bool:
     if not weekdays:
         return True
     return day.isoweekday() in weekdays
-
-
-def compute_availability(
-    task: dict[str, Any], completions: list[dict[str, Any]], now: datetime
-) -> str:
-    """Whether the child can mark the task as done now (this child's completions only)."""
-    if any(c["status"] == "pending" for c in completions):
-        return PENDING_APPROVAL
-    recurrence = task.get("recurrence", "once")
-    if recurrence != "once" and not is_active_on(task, now):
-        return NOT_SCHEDULED_TODAY
-
-    approved = sorted(
-        (c for c in completions if c["status"] == "approved"),
-        key=lambda c: parse_dt(c["completedAt"]),
-        reverse=True,
-    )
-    if not approved:
-        return AVAILABLE
-    last = parse_dt(approved[0]["completedAt"]).date()
-
-    if recurrence == "once":
-        return COMPLETED_ONCE
-    if recurrence == "daily":
-        return DONE_TODAY if last == now.date() else AVAILABLE
-    if recurrence == "weekly":
-        return DONE_THIS_WEEK if (now.date() - last).days < 7 else AVAILABLE
-    return AVAILABLE
 
 
 # ---- The child's task list (Del H2) -----------------------------------------------
@@ -273,7 +241,7 @@ def in_view(occurrence: dict[str, Any] | None, now: datetime) -> bool:
     return occurrence is not None and occurrence["date"] < now.date() + timedelta(days=VIEW_DAYS)
 
 
-# ---- Follow-up ----------------------------------------------------------------
+# ---- Deadlines -----------------------------------------------------------------
 
 
 def effective_due(
@@ -290,105 +258,24 @@ def is_late(task: dict[str, Any], settings: dict[str, Any], completed_at: dateti
     return due is not None and completed_at > due
 
 
-def in_restriction_window(settings: dict[str, Any], now: datetime) -> bool:
-    """Whether `now` is in the restriction window; windows across midnight work."""
-    start = minutes_of_day(settings["restrictionStart"]) or 0
-    end = minutes_of_day(settings["restrictionEnd"]) or 0
-    current = now.hour * 60 + now.minute
-    if start == end:
-        return False
-    if start < end:
-        return start <= current < end
-    return current >= start or current < end
-
-
-def _due_json(task: dict[str, Any], due: datetime) -> dict[str, Any]:
-    return {"taskId": task["id"], "title": task["title"], "due": f"{due:%H:%M}"}
-
-
-def compute_follow_up(
-    tasks: list[dict[str, Any]],
-    completions: list[dict[str, Any]],
-    settings: dict[str, Any],
-    now: datetime,
-    suspended_on: str | None,
-    language: str | None = None,
-) -> dict[str, Any]:
-    """Follow-up for one child.
-
-    `tasks` are the active tasks that apply to the child, `completions` the
-    child's own (all tasks). `reason` is written in `language`.
-    """
-    due_today: list[tuple[datetime, dict[str, Any]]] = []
-    overdue: list[tuple[datetime, dict[str, Any]]] = []
-
-    for task in tasks:
-        if not task.get("active", True) or not task.get("mandatory"):
-            continue
-        if task.get("recurrence") != "once" and not is_active_on(task, now):
-            continue
-        for_task = [c for c in completions if c["taskId"] == task["id"]]
-        if compute_availability(task, for_task, now) != AVAILABLE:
-            continue  # awaiting approval, already done, or not today
-        # 'unlimited' tasks are always available - an approved completion
-        # today still counts as today's duty being done.
-        if any(
-            c["status"] == "approved" and parse_dt(c["completedAt"]).date() == now.date()
-            for c in for_task
-        ):
-            continue
-        due = effective_due(task, settings, now)
-        (due_today if now < due else overdue).append((due, task))
-
-    late_pause_until: datetime | None = None
-    pause = timedelta(minutes=settings["latePauseMinutes"])
-    for completion in completions:
-        if not completion.get("late") or completion["status"] == "rejected":
-            continue
-        until = parse_dt(completion["completedAt"]) + pause
-        if now < until and (late_pause_until is None or until > late_pause_until):
-            late_pause_until = until
-
-    in_window = in_restriction_window(settings, now)
-    suspended = suspended_on is not None and suspended_on == date_key(now)
-    restricted = in_window and not suspended and (bool(overdue) or late_pause_until is not None)
-
-    reason: str | None = None
-    if restricted:
-        if overdue:
-            names = ", ".join(
-                translate("reason_overdue_task", language, title=t["title"], due=f"{d:%H:%M}")
-                for d, t in overdue
-            )
-            reason = translate("reason_overdue", language, tasks=names)
-        else:
-            reason = translate("reason_late", language, until=f"{late_pause_until:%H:%M}")
-
-    return {
-        "dueToday": [_due_json(t, d) for d, t in due_today],
-        "overdue": [_due_json(t, d) for d, t in overdue],
-        "latePauseUntil": to_iso(late_pause_until) if late_pause_until else None,
-        "inWindow": in_window,
-        "suspended": suspended,
-        "restricted": restricted,
-        "reason": reason,
-    }
-
-
 # ---- The family's settings ----------------------------------------------------
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "defaultDueTime": "18:00",
-    "restrictionStart": "15:00",
-    "restrictionEnd": "21:00",
+    # How long a lock runs once the child uses the tablet (Del H4).
+    "lockMinutes": 60,
     "latePauseMinutes": 10,
     "warningMinutes": 60,
     "winterFromWeek": 43,
     "winterToWeek": 13,
 }
 
-_TIME_SETTINGS = {"defaultDueTime", "restrictionStart", "restrictionEnd"}
+_TIME_SETTINGS = {"defaultDueTime"}
+# Settings that existed before; stored values are dropped (Del H removed the
+# 15:00-21:00 restriction window).
+REMOVED_SETTINGS = ("restrictionStart", "restrictionEnd")
 _INT_SETTINGS = {
+    "lockMinutes": (1, 480),
     "latePauseMinutes": (0, 240),
     "warningMinutes": (0, 600),
     "winterFromWeek": (1, 53),
@@ -433,7 +320,9 @@ def settings_from(raw: Any) -> dict[str, Any]:
 # ---- The child's tablet -------------------------------------------------------
 
 # Actions a child's tablet may send. Everything else requires a parent device.
-CHILD_ALLOWED_ACTIONS = frozenset({"complete_task"})
+# `report_use` (the tablet is being used, Del H4) only comes from a tablet.
+CHILD_ALLOWED_ACTIONS = frozenset({"complete_task", "report_use"})
+CHILD_ONLY_ACTIONS = frozenset({"report_use"})
 
 
 def is_action_allowed_for_child(action: dict[str, Any], child_id: str) -> bool:

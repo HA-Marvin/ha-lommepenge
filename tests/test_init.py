@@ -49,9 +49,16 @@ async def _family_with_task(hass: HomeAssistant, entry: MockConfigEntry):
     return runtime
 
 
-async def test_restriction_and_events(
+async def _tick(hass: HomeAssistant, freezer, when: str) -> None:
+    freezer.move_to(when)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+
+async def test_lock_and_events(
     hass: HomeAssistant, config_entry: MockConfigEntry, freezer
 ) -> None:
+    """The "Tablet restricted" sensor is on exactly while a lock runs."""
     freezer.move_to("2026-11-23 16:00:00+01:00")
     await hass.config.async_set_time_zone("Europe/Copenhagen")
     runtime = await _family_with_task(hass, config_entry)
@@ -61,16 +68,28 @@ async def test_restriction_and_events(
     restricted_id = _entity_id(hass, "binary_sensor", f"{entry_id}_emma_restricted")
     assert hass.states.get(restricted_id).state == "off"
 
-    # The deadline passes: restricted, without anyone doing anything.
-    freezer.move_to("2026-11-23 18:05:00+01:00")
-    async_fire_time_changed(hass)
+    # The deadline passes: a lock is pending - not restricted yet.
+    await _tick(hass, freezer, "2026-11-23 18:05:00+01:00")
+    state = hass.states.get(restricted_id)
+    assert state.state == "off"
+    assert state.attributes["lock_status"] == "pending"
+    assert state.attributes["reason"] == "Missing: Empty the dishwasher (due 18:00)"
+    assert events == []
+
+    # The tablet is used: the lock runs for an hour.
+    await runtime.async_apply(
+        {"type": "report_use", "payload": {"childId": "emma", "event": "screen_on"}}
+    )
     await hass.async_block_till_done()
     state = hass.states.get(restricted_id)
     assert state.state == "on"
-    assert state.attributes["reason"] == "Missing: Empty the dishwasher (due 18:00)"
-    assert [e.data["event"] for e in events] == ["restriction_changed"]
+    assert state.attributes["ends_at"] == "2026-11-23T19:05:00.000"
+    started = events[-1].data
+    assert started["event"] == "lock_started" and started["childName"] == "Emma"
+    assert started["reason"] == "Missing: Empty the dishwasher (due 18:00)"
+    assert started["minutes"] == 60 and started["config_entry_id"] == entry_id
 
-    # The child marks it as done (late): awaiting approval + pause.
+    # Done late while the lock runs: still money, the lock keeps running.
     completion = await runtime.async_apply(
         {"type": "complete_task", "payload": {"taskId": "t1", "childId": "emma"}}
     )
@@ -84,12 +103,11 @@ async def test_restriction_and_events(
     assert pending_event.data["config_entry_id"] == entry_id
     pending_id = _entity_id(hass, "sensor", f"{entry_id}_pending_approvals")
     assert hass.states.get(pending_id).state == "1"
-    assert hass.states.get(restricted_id).state == "on"  # pause
+    assert hass.states.get(restricted_id).state == "on"
 
-    freezer.move_to("2026-11-23 18:16:00+01:00")
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
+    await _tick(hass, freezer, "2026-11-23 19:05:30+01:00")
     assert hass.states.get(restricted_id).state == "off"
+    assert events[-1].data["event"] == "lock_ended"
 
     await hass.services.async_call(
         DOMAIN, "approve", {"completion_id": completion["id"]}, blocking=True
@@ -104,11 +122,12 @@ async def test_restriction_and_events(
 async def test_texts_follow_the_chosen_language(hass: HomeAssistant, freezer) -> None:
     """HA itself runs in English, but the family chose Spanish and euro: the
     entity names, texts and amounts follow the integration, not HA."""
-    freezer.move_to("2026-11-23 19:00:00+01:00")
+    freezer.move_to("2026-11-23 17:00:00+01:00")
     await hass.config.async_set_time_zone("Europe/Copenhagen")
     assert hass.config.language == "en"
     entry = family_entry("es", "€")
     await _family_with_task(hass, entry)
+    await _tick(hass, freezer, "2026-11-23 19:00:00+01:00")
     restricted_id = _entity_id(hass, "binary_sensor", f"{entry.entry_id}_emma_restricted")
     restricted = hass.states.get(restricted_id)
     assert restricted.attributes["reason"] == "Falta: Empty the dishwasher (límite 18:00)"
@@ -122,20 +141,44 @@ async def test_texts_follow_the_chosen_language(hass: HomeAssistant, freezer) ->
     assert device.model == "Familia"
 
 
-async def test_settings_and_suspend_from_ha(
+async def test_settings_lift_and_pause_from_ha(
     hass: HomeAssistant, config_entry: MockConfigEntry, freezer
 ) -> None:
-    freezer.move_to("2026-11-23 19:00:00+01:00")
+    freezer.move_to("2026-11-23 17:00:00+01:00")
     await hass.config.async_set_time_zone("Europe/Copenhagen")
     runtime = await _family_with_task(hass, config_entry)
     entry_id = config_entry.entry_id
+    events = async_capture_events(hass, EVENT_LOMMEPENGE)
+    await _tick(hass, freezer, "2026-11-23 19:00:00+01:00")
 
+    await runtime.async_apply(
+        {"type": "report_use", "payload": {"childId": "emma", "event": "user_present"}}
+    )
+    await hass.async_block_till_done()
     restricted_id = _entity_id(hass, "binary_sensor", f"{entry_id}_emma_restricted")
     assert hass.states.get(restricted_id).state == "on"
-    button = _entity_id(hass, "button", f"{entry_id}_emma_suspend_restriction")
+    button = _entity_id(hass, "button", f"{entry_id}_emma_lift_lock")
     await hass.services.async_call("button", "press", {"entity_id": button}, blocking=True)
     await hass.async_block_till_done()
     assert hass.states.get(restricted_id).state == "off"
+    assert events[-1].data["event"] == "lock_lifted"
+    assert events[-1].data["wasRunning"] is True
+
+    # The same overdue occurrence never locks again.
+    await _tick(hass, freezer, "2026-11-23 19:01:00+01:00")
+    assert hass.states.get(restricted_id).attributes["lock_status"] == "none"
+
+    # Pause: the switch (no end date), or the service with an end date.
+    switch = _entity_id(hass, "switch", f"{entry_id}_emma_paused")
+    await hass.services.async_call("switch", "turn_on", {"entity_id": switch}, blocking=True)
+    assert hass.states.get(switch).state == "on"
+    await hass.services.async_call(
+        DOMAIN, "pause", {"child_id": "emma", "until": "2026-11-26"}, blocking=True
+    )
+    assert hass.states.get(switch).attributes["paused_until"] == "2026-11-26"
+    await hass.services.async_call(DOMAIN, "resume", {"child_id": "emma"}, blocking=True)
+    assert hass.states.get(switch).state == "off"
+    await hass.services.async_call(DOMAIN, "lift_lock", {"child_id": "emma"}, blocking=True)
 
     due = _entity_id(hass, "time", f"{entry_id}_default_due_time")
     await hass.services.async_call(
@@ -145,8 +188,68 @@ async def test_settings_and_suspend_from_ha(
     await hass.services.async_call(
         "number", "set_value", {"entity_id": pause, "value": 25}, blocking=True
     )
+    lock_minutes = _entity_id(hass, "number", f"{entry_id}_lock_minutes")
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": lock_minutes, "value": 45}, blocking=True
+    )
     assert runtime.family.settings["defaultDueTime"] == "17:15"
     assert runtime.family.settings["latePauseMinutes"] == 25
+    assert runtime.family.settings["lockMinutes"] == 45
+
+
+async def test_reject_service_with_reason(
+    hass: HomeAssistant, config_entry: MockConfigEntry, freezer
+) -> None:
+    freezer.move_to("2026-11-23 12:00:00+01:00")
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+    runtime = await _family_with_task(hass, config_entry)
+    events = async_capture_events(hass, EVENT_LOMMEPENGE)
+    completion = await runtime.async_apply(
+        {"type": "complete_task", "payload": {"taskId": "t1", "childId": "emma"}}
+    )
+    await hass.services.async_call(
+        DOMAIN,
+        "reject",
+        {"completion_id": completion["id"], "reason": "Still dirty"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    rejected = events[-1].data
+    assert rejected["event"] == "completion_rejected" and rejected["reason"] == "Still dirty"
+    # A rejected mandatory task locks (pending until the tablet is used).
+    restricted_id = _entity_id(hass, "binary_sensor", f"{config_entry.entry_id}_emma_restricted")
+    state = hass.states.get(restricted_id)
+    assert state.state == "off" and state.attributes["lock_status"] == "pending"
+    assert state.attributes["reason"] == "Rejected: Empty the dishwasher"
+
+
+async def test_old_entities_are_removed(hass: HomeAssistant) -> None:
+    """Config entry 2.2 -> 2.3: the window times and "lift today" buttons go."""
+    old = MockConfigEntry(
+        domain=DOMAIN,
+        version=2,
+        minor_version=2,
+        title="The Family",
+        data={CONF_FAMILY_NAME: "The Family", CONF_LANGUAGE: "en", **hash_pin(PIN)},
+    )
+    old.add_to_hass(hass)
+    ent_reg = er.async_get(hass)
+    for platform, key in (
+        ("time", "restriction_start"),
+        ("time", "restriction_end"),
+        ("button", "emma_suspend_restriction"),
+        ("time", "default_due_time"),
+    ):
+        ent_reg.async_get_or_create(platform, DOMAIN, f"{old.entry_id}_{key}", config_entry=old)
+    await setup_entry(hass, old)
+    assert old.minor_version == 3
+    remaining = {e.unique_id for e in er.async_entries_for_config_entry(ent_reg, old.entry_id)}
+    assert f"{old.entry_id}_default_due_time" in remaining
+    assert not {
+        f"{old.entry_id}_restriction_start",
+        f"{old.entry_id}_restriction_end",
+        f"{old.entry_id}_emma_suspend_restriction",
+    } & remaining
 
 
 async def test_child_devices_follow_the_app(
@@ -193,7 +296,7 @@ async def test_existing_install_keeps_danish(hass: HomeAssistant) -> None:
         data={CONF_FAMILY_NAME: "Familien", **hash_pin(PIN)},
     )
     runtime = await setup_entry(hass, old)
-    assert old.minor_version == 2
+    assert old.minor_version == 3
     assert old.data[CONF_LANGUAGE] == "da"
     assert runtime.language == "da"
 
@@ -250,8 +353,55 @@ async def test_old_storage_is_migrated(
     # The old one-off task is still there (not missed for its old deadline).
     assert family.task("t1")["active"] is True
     assert family.task_entries("emma", datetime(2026, 11, 23, 12))[0]["status"] == "available"
+    assert family.settings["lockMinutes"] == 60
+    assert "restrictionSuspensions" not in family.data
     stored = hass_storage[f"{DOMAIN}.{config_entry.entry_id}"]
-    assert stored["minor_version"] == 2
+    assert stored["minor_version"] == 3
+
+
+async def test_restriction_window_is_migrated(
+    hass: HomeAssistant, config_entry: MockConfigEntry, hass_storage, freezer
+) -> None:
+    """Storage 1.2 -> 1.3 (Del H4): the window settings go, locks come."""
+    freezer.move_to("2026-11-23 12:00:00+01:00")
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+    hass_storage[f"{DOMAIN}.{config_entry.entry_id}"] = {
+        "version": 1,
+        "minor_version": 2,
+        "key": f"{DOMAIN}.{config_entry.entry_id}",
+        "data": {
+            "family": {
+                "children": [],
+                "tasks": [],
+                "completions": [],
+                "balanceAdjustments": [],
+                "paidOutOreByChild": {},
+                "familySettings": {
+                    "defaultDueTime": "17:00",
+                    "restrictionStart": "14:00",
+                    "restrictionEnd": "20:00",
+                    "latePauseMinutes": 15,
+                },
+                "restrictionSuspensions": {"emma": "2026-11-22"},
+                "missed": [],
+                "cleanedThrough": "2026-11-22",
+            },
+            "devices": {},
+            "pairings": {},
+        },
+    }
+    runtime = await setup_entry(hass, config_entry)
+    family = runtime.family
+    assert family.settings["defaultDueTime"] == "17:00"
+    assert family.settings["latePauseMinutes"] == 15
+    assert family.settings["lockMinutes"] == 60
+    assert "restrictionStart" not in family.settings
+    assert family.data["locks"] == [] and family.data["notifications"] == []
+    await runtime.async_save_now()
+    stored = hass_storage[f"{DOMAIN}.{config_entry.entry_id}"]
+    assert stored["minor_version"] == 3
+    assert "restrictionSuspensions" not in stored["data"]["family"]
+    assert "restrictionEnd" not in stored["data"]["family"]["familySettings"]
 
 
 async def test_cleanup_runs_at_midnight(

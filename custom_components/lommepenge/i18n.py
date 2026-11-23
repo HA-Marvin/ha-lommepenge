@@ -4,7 +4,7 @@ The language is chosen when the integration is set up (`CONF_LANGUAGE`) and
 never taken from HA's language. Entity names come from
 `translations/<language>.json` (see `async_entity_names`); this module also
 covers what the integration writes on its own: error messages shown in the
-app, restriction reasons, notification texts for the blueprints and the
+app, lock reasons, the child's notifications, texts for the blueprints and the
 install page. The app sends its own chosen language with every request, so
 its messages follow the app.
 """
@@ -281,27 +281,77 @@ MESSAGES: dict[str, dict[str, str]] = {
         "es": "Ajuste desconocido: {key}",
         "fr": "Paramètre inconnu : {key}",
     },
-    # ---- Restriction reason (sensor attribute and event) -----------------------
-    "reason_overdue": {
-        "en": "Missing: {tasks}",
-        "da": "Mangler: {tasks}",
-        "de": "Fehlt: {tasks}",
-        "es": "Falta: {tasks}",
-        "fr": "Manquant : {tasks}",
+    "invalid_pause_until": {
+        "en": "The pause must end on a date after today (YYYY-MM-DD): {value}",
+        "da": "Pausen skal slutte på en dato efter i dag (ÅÅÅÅ-MM-DD): {value}",
+        "de": "Die Pause muss an einem Datum nach heute enden (JJJJ-MM-TT): {value}",
+        "es": "La pausa debe terminar en una fecha posterior a hoy (AAAA-MM-DD): {value}",
+        "fr": "La pause doit se terminer à une date après aujourd'hui (AAAA-MM-JJ) : {value}",
     },
-    "reason_overdue_task": {
-        "en": "{title} (due {due})",
-        "da": "{title} (frist {due})",
-        "de": "{title} (fällig {due})",
-        "es": "{title} (límite {due})",
-        "fr": "{title} (échéance {due})",
+    # ---- Lock reasons (state, sensor attribute, events and history) ------------
+    "lock_reason_overdue": {
+        "en": "Missing: {title} (due {due})",
+        "da": "Mangler: {title} (frist {due})",
+        "de": "Fehlt: {title} (fällig {due})",
+        "es": "Falta: {title} (límite {due})",
+        "fr": "Manquant : {title} (échéance {due})",
     },
-    "reason_late": {
-        "en": "The task was done late - unlocks at {until}",
-        "da": "Opgaven er udført for sent - låses op kl. {until}",
-        "de": "Die Aufgabe wurde zu spät erledigt - wird um {until} entsperrt",
-        "es": "La tarea se hizo tarde - se desbloquea a las {until}",
-        "fr": "La tâche a été faite en retard - déblocage à {until}",
+    "lock_reason_rejected": {
+        "en": "Rejected: {title}",
+        "da": "Afvist: {title}",
+        "de": "Abgelehnt: {title}",
+        "es": "Rechazada: {title}",
+        "fr": "Refusée : {title}",
+    },
+    "lock_reason_late": {
+        "en": "Done late: {title}",
+        "da": "Udført for sent: {title}",
+        "de": "Zu spät erledigt: {title}",
+        "es": "Hecha tarde: {title}",
+        "fr": "Faite en retard : {title}",
+    },
+    # ---- Notifications for the child (Del H3) -----------------------------------
+    "notification_deadline_warning": {
+        "en": "Remember {title} – due at {due}",
+        "da": "Husk {title} – frist kl. {due}",
+        "de": "Denk an {title} – fällig um {due}",
+        "es": "Recuerda {title} – límite a las {due}",
+        "fr": "N'oublie pas {title} – échéance à {due}",
+    },
+    "notification_overdue": {
+        "en": "{title} was due at {due} – do it now",
+        "da": "{title} skulle være lavet kl. {due} – gør det nu",
+        "de": "{title} war um {due} fällig – erledige es jetzt",
+        "es": "{title} tenía límite a las {due} – hazla ahora",
+        "fr": "{title} était à faire avant {due} – fais-le maintenant",
+    },
+    "notification_rejected": {
+        "en": "{title} was rejected",
+        "da": "{title} blev afvist",
+        "de": "{title} wurde abgelehnt",
+        "es": "{title} fue rechazada",
+        "fr": "{title} a été refusée",
+    },
+    "notification_rejected_reason": {
+        "en": "{title} was rejected: {reason}",
+        "da": "{title} blev afvist: {reason}",
+        "de": "{title} wurde abgelehnt: {reason}",
+        "es": "{title} fue rechazada: {reason}",
+        "fr": "{title} a été refusée : {reason}",
+    },
+    "notification_lock_started": {
+        "en": "The tablet is locked for {minutes} minutes. {reason}",
+        "da": "Tabletten er låst i {minutes} minutter. {reason}",
+        "de": "Das Tablet ist für {minutes} Minuten gesperrt. {reason}",
+        "es": "La tableta está bloqueada durante {minutes} minutos. {reason}",
+        "fr": "La tablette est bloquée pendant {minutes} minutes. {reason}",
+    },
+    "notification_forgotten": {
+        "en": "You forgot {title} – it gives no money today",
+        "da": "Du glemte {title} – den giver ikke penge i dag",
+        "de": "Du hast {title} vergessen – dafür gibt es heute kein Geld",
+        "es": "Olvidaste {title} – hoy no da dinero",
+        "fr": "Tu as oublié {title} – elle ne rapporte rien aujourd'hui",
     },
     # ---- Notification texts (event data for the blueprints) ---------------------
     "notify_completion": {

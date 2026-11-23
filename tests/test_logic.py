@@ -1,4 +1,4 @@
-"""The rules - the same expectations as the app's follow_up_test/task_balance_test."""
+"""The pure rules: times, settings and the child's scope."""
 
 from __future__ import annotations
 
@@ -25,19 +25,6 @@ def task(**fields):
     }
 
 
-def completion(status: str, at: datetime, **fields):
-    return {
-        "id": f"c-{status}-{at:%d%H%M}",
-        "taskId": "t1",
-        "childId": "emma",
-        "completedAt": logic.to_iso(at),
-        "status": status,
-        "amountAtCompletionOre": 500,
-        "late": False,
-        **fields,
-    }
-
-
 def test_time_helpers() -> None:
     assert logic.normalize_time("7:5") == "07:05"
     assert logic.normalize_time("24:00") is None
@@ -49,104 +36,26 @@ def test_time_helpers() -> None:
     assert logic.parse_dt("2026-11-23T18:30:00.000") == datetime(2026, 11, 23, 18, 30)
 
 
-def test_availability_rules() -> None:
-    daily = task()
-    assert logic.compute_availability(daily, [], MONDAY) == logic.AVAILABLE
-    assert (
-        logic.compute_availability(daily, [completion("pending", MONDAY)], MONDAY)
-        == logic.PENDING_APPROVAL
-    )
-    approved_today = [completion("approved", MONDAY.replace(hour=8))]
-    assert logic.compute_availability(daily, approved_today, MONDAY) == logic.DONE_TODAY
-    # A rejected completion does not block.
-    rejected = [completion("rejected", MONDAY.replace(hour=8))]
-    assert logic.compute_availability(daily, rejected, MONDAY) == logic.AVAILABLE
-
-    once = task(recurrence="once")
-    assert logic.compute_availability(once, approved_today, MONDAY) == logic.COMPLETED_ONCE
-
-    weekly = task(recurrence="weekly")
-    four_days_ago = [completion("approved", datetime(2026, 11, 19, 9, 0))]
-    assert logic.compute_availability(weekly, four_days_ago, MONDAY) == logic.DONE_THIS_WEEK
-
-    tuesdays = task(activeWeekdays=[2])
-    assert logic.compute_availability(tuesdays, [], MONDAY) == logic.NOT_SCHEDULED_TODAY
-
-    unlimited = task(recurrence="unlimited")
-    assert logic.compute_availability(unlimited, approved_today, MONDAY) == logic.AVAILABLE
-
-
-def test_follow_up_overdue_and_restricted() -> None:
-    evening = MONDAY.replace(hour=19)
-    result = logic.compute_follow_up([task()], [], SETTINGS, evening, None)
-    assert result["restricted"] is True
-    assert result["overdue"] == [{"taskId": "t1", "title": "Empty the dishwasher", "due": "18:00"}]
-    assert result["reason"] == "Missing: Empty the dishwasher (due 18:00)"
-
-    # Before the deadline: on the list, but not restricted.
-    afternoon = MONDAY.replace(hour=16)
-    result = logic.compute_follow_up([task()], [], SETTINGS, afternoon, None)
-    assert result["restricted"] is False
-    assert result["dueToday"][0]["due"] == "18:00"
-
-    # Marked as done (awaiting approval): the restriction is lifted.
-    pending = [completion("pending", evening)]
-    result = logic.compute_follow_up([task()], pending, SETTINGS, evening, None)
-    assert result["overdue"] == []
-
-    # Optional tasks are not followed up.
-    result = logic.compute_follow_up([task(mandatory=False)], [], SETTINGS, evening, None)
-    assert result["overdue"] == []
-
-
-def test_follow_up_reason_in_each_language() -> None:
-    evening = MONDAY.replace(hour=19)
-    reasons = {
-        language: logic.compute_follow_up([task()], [], SETTINGS, evening, None, language)[
-            "reason"
-        ]
-        for language in ("en", "da", "de", "es", "fr")
-    }
-    assert reasons == {
-        "en": "Missing: Empty the dishwasher (due 18:00)",
-        "da": "Mangler: Empty the dishwasher (frist 18:00)",
-        "de": "Fehlt: Empty the dishwasher (fällig 18:00)",
-        "es": "Falta: Empty the dishwasher (límite 18:00)",
-        "fr": "Manquant : Empty the dishwasher (échéance 18:00)",
-    }
-
-
-def test_follow_up_window_and_suspension() -> None:
-    late_night = MONDAY.replace(hour=22)
-    result = logic.compute_follow_up([task()], [], SETTINGS, late_night, None)
-    assert result["overdue"] and result["inWindow"] is False and result["restricted"] is False
-
-    evening = MONDAY.replace(hour=19)
-    result = logic.compute_follow_up([task()], [], SETTINGS, evening, "2026-11-23")
-    assert result["suspended"] is True and result["restricted"] is False
-    # A suspension from yesterday does not apply today.
-    result = logic.compute_follow_up([task()], [], SETTINGS, evening, "2026-11-22")
-    assert result["restricted"] is True
-
-
-def test_late_completion_gives_pause() -> None:
+def test_is_late() -> None:
     done = MONDAY.replace(hour=18, minute=30)
-    late = [completion("pending", done, late=True)]
-    result = logic.compute_follow_up([task()], late, SETTINGS, done.replace(minute=35), None)
-    assert result["restricted"] is True
-    assert result["reason"] == "The task was done late - unlocks at 18:40"
-
-    result = logic.compute_follow_up([task()], late, SETTINGS, done.replace(minute=41), None)
-    assert result["restricted"] is False
     assert logic.is_late(task(), SETTINGS, done) is True
     assert logic.is_late(task(dueTime="19:00"), SETTINGS, done) is False
+    assert logic.is_late(task(mandatory=False), SETTINGS, done) is False
 
 
-def test_window_over_midnight() -> None:
-    settings = {**SETTINGS, "restrictionStart": "22:00", "restrictionEnd": "02:00"}
-    assert logic.in_restriction_window(settings, MONDAY.replace(hour=23))
-    assert logic.in_restriction_window(settings, MONDAY.replace(hour=1))
-    assert not logic.in_restriction_window(settings, MONDAY.replace(hour=12))
+def test_restriction_window_is_gone() -> None:
+    """Del H4: no 15:00-21:00 window; a lock lasts lockMinutes instead."""
+    assert "restrictionStart" not in logic.DEFAULT_SETTINGS
+    assert logic.DEFAULT_SETTINGS["lockMinutes"] == 60
+    # Old stored values are dropped, not kept.
+    settings = logic.settings_from({"restrictionStart": "15:00", "lockMinutes": 30})
+    assert settings == {**SETTINGS, "lockMinutes": 30}
+    for value in (0, 481):
+        try:
+            logic.validate_setting("lockMinutes", value)
+        except ValueError:
+            continue
+        raise AssertionError(f"lockMinutes={value} should fail")
 
 
 def test_settings_validation() -> None:
@@ -173,6 +82,16 @@ def test_child_scope() -> None:
     )
     assert not logic.is_action_allowed_for_child(
         {"type": "approve_completion", "payload": {"childId": "emma"}}, "emma"
+    )
+    # The tablet reports its own use only.
+    assert logic.is_action_allowed_for_child(
+        {"type": "report_use", "payload": {"childId": "emma"}}, "emma"
+    )
+    assert not logic.is_action_allowed_for_child(
+        {"type": "report_use", "payload": {"childId": "oscar"}}, "emma"
+    )
+    assert not logic.is_action_allowed_for_child(
+        {"type": "lift_lock", "payload": {"childId": "emma"}}, "emma"
     )
     assert logic.task_applies_to_child({"assignedChildIds": None}, "emma")
     assert not logic.task_applies_to_child({"assignedChildIds": ["oscar"]}, "emma")

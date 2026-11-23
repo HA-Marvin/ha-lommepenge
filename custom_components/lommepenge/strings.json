@@ -12,7 +12,7 @@
         },
         "data_description": {
           "pin": "Unlocks the parent part of the app on the family screen and the parents' phones.",
-          "language": "Language of entity names, restriction reasons, notifications and the install page - independent of Home Assistant's language. Each device chooses its own language in the app.",
+          "language": "Language of entity names, lock reasons, notifications and the install page - independent of Home Assistant's language. Each device chooses its own language in the app.",
           "currency": "Written as you want it shown, e.g. DKK, kr, € or USD."
         }
       }
@@ -39,7 +39,7 @@
           "pin": "New parent PIN (leave empty to keep)"
         },
         "data_description": {
-          "language": "Language of entity names, restriction reasons, notifications and the install page - independent of Home Assistant's language.",
+          "language": "Language of entity names, lock reasons, notifications and the install page - independent of Home Assistant's language.",
           "currency": "Written as you want it shown, e.g. DKK, kr, € or USD."
         }
       }
@@ -134,22 +134,24 @@
       }
     },
     "button": {
-      "suspend_restriction": {
-        "name": "Lift restriction today"
+      "lift_lock": {
+        "name": "Lift lock"
+      }
+    },
+    "switch": {
+      "paused": {
+        "name": "Tasks paused"
       }
     },
     "time": {
       "default_due_time": {
         "name": "Default deadline"
-      },
-      "restriction_start": {
-        "name": "Restriction from"
-      },
-      "restriction_end": {
-        "name": "Restriction until"
       }
     },
     "number": {
+      "lock_minutes": {
+        "name": "Lock duration"
+      },
       "late_pause_minutes": {
         "name": "Pause when done late"
       },
@@ -192,12 +194,40 @@
         "completion_id": {
           "name": "Completion ID",
           "description": "completionId from the lommepenge_event event."
+        },
+        "reason": {
+          "name": "Reason",
+          "description": "Optional. Shown to the child in the notification."
         }
       }
     },
-    "suspend_restriction": {
-      "name": "Lift restriction today",
-      "description": "Lifts the child's restriction for the rest of today.",
+    "lift_lock": {
+      "name": "Lift lock",
+      "description": "Clears the child's pending and running lock. New overdue or rejected tasks can lock the tablet again.",
+      "fields": {
+        "child_id": {
+          "name": "Child ID",
+          "description": "The child_id attribute of the child's \"Tablet restricted\" sensor."
+        }
+      }
+    },
+    "pause": {
+      "name": "Pause tasks",
+      "description": "Pauses the child: no task is mandatory (no deadline, no lock), but the tasks still earn money. Also lifts the child's lock.",
+      "fields": {
+        "child_id": {
+          "name": "Child ID",
+          "description": "The child_id attribute of the child's \"Tablet restricted\" sensor."
+        },
+        "until": {
+          "name": "Until",
+          "description": "The date the tasks are mandatory again (from midnight). Empty = until resumed."
+        }
+      }
+    },
+    "resume": {
+      "name": "Resume tasks",
+      "description": "Ends the child's pause: the tasks are mandatory again from now.",
       "fields": {
         "child_id": {
           "name": "Child ID",

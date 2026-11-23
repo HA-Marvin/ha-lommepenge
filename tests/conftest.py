@@ -74,7 +74,7 @@ def family_entry(language: str = "en", currency: str = "DKK") -> MockConfigEntry
     return MockConfigEntry(
         domain=DOMAIN,
         version=2,
-        minor_version=2,
+        minor_version=3,
         title="The Family",
         data={
             CONF_FAMILY_NAME: "The Family",

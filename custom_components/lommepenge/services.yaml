@@ -13,8 +13,31 @@ reject:
       example: "3f2b6c1e-..."
       selector:
         text:
+    reason:
+      required: false
+      example: "The dishes are still dirty"
+      selector:
+        text:
 
-suspend_restriction:
+lift_lock:
+  fields:
+    child_id:
+      required: true
+      selector:
+        text:
+
+pause:
+  fields:
+    child_id:
+      required: true
+      selector:
+        text:
+    until:
+      required: false
+      selector:
+        date:
+
+resume:
   fields:
     child_id:
       required: true

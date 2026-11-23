@@ -1,4 +1,4 @@
-"""Button per child: lift the restriction for the rest of today."""
+"""Button per child: lift the lock (Del H4)."""
 
 from __future__ import annotations
 
@@ -21,21 +21,21 @@ async def async_setup_entry(
     async_setup_child_entities(
         coordinator,
         async_add_entities,
-        lambda child_id: [SuspendRestrictionButton(coordinator, child_id)],
+        lambda child_id: [LiftLockButton(coordinator, child_id)],
     )
 
 
-class SuspendRestrictionButton(LommepengeChildEntity, ButtonEntity):
+class LiftLockButton(LommepengeChildEntity, ButtonEntity):
+    """Clears the child's pending and running lock. New causes can lock again."""
+
     _attr_icon = "mdi:lock-open-variant-outline"
 
     def __init__(self, coordinator: LommepengeCoordinator, child_id: str) -> None:
-        super().__init__(coordinator, child_id, "suspend_restriction")
+        super().__init__(coordinator, child_id, "lift_lock")
 
     async def async_press(self) -> None:
         try:
-            await self.coordinator.async_action(
-                "suspend_restriction", {"childId": self.child_id}
-            )
+            await self.coordinator.async_action("lift_lock", {"childId": self.child_id})
         except LommepengeError as err:
             language = self.coordinator.runtime.language
             raise HomeAssistantError(f"Lommepenge: {err.translate(language)}") from err

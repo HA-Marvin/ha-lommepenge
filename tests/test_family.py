@@ -155,11 +155,16 @@ def test_errors_are_translated(family: Family) -> None:
 def test_summary_and_state(family: Family) -> None:
     act(family, "complete_task", taskId="t1", childId="emma")
     evening = NOW.replace(hour=19)
+    family.tick(evening)
     summary = family.summary("The Family", evening)
     emma, oscar = summary["children"]
-    assert emma["restricted"] is False  # has marked it as done
-    assert oscar["restricted"] is True
-    assert oscar["reason"] == "Missing: Empty the dishwasher (due 18:00)"
+    assert emma["lock"]["status"] == "none"  # has marked it as done
+    # Oscar's lock waits for him to use the tablet; only then is he restricted.
+    assert oscar["lock"]["status"] == "pending" and oscar["restricted"] is False
+    assert oscar["lock"]["reason"] == "Missing: Empty the dishwasher (due 18:00)"
+    assert oscar["overdue"] == [{"taskId": "t1", "title": "Empty the dishwasher", "due": "18:00"}]
+    act(family, "report_use", now=evening, childId="oscar", event="screen_on")
+    assert family.summary("The Family", evening)["children"][1]["restricted"] is True
     pending = summary["pending"][0]
     assert pending["childName"] == "Emma"
     assert pending["taskTitle"] == "Empty the dishwasher"
@@ -167,7 +172,7 @@ def test_summary_and_state(family: Family) -> None:
     assert pending["message"] == 'Emma did "Empty the dishwasher" – 5 DKK'
 
     danish = family.summary("The Family", evening, "da", "kr")
-    assert danish["children"][1]["reason"] == "Mangler: Empty the dishwasher (frist 18:00)"
+    assert danish["children"][1]["lock"]["reason"] == "Mangler: Empty the dishwasher (frist 18:00)"
     assert danish["pending"][0]["message"] == 'Emma har lavet "Empty the dishwasher" – 5 kr'
 
     state = family.state_json("The Family", evening)

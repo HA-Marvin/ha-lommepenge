@@ -134,22 +134,24 @@
       }
     },
     "button": {
-      "suspend_restriction": {
-        "name": "Sperre heute aufheben"
+      "lift_lock": {
+        "name": "Sperre aufheben"
+      }
+    },
+    "switch": {
+      "paused": {
+        "name": "Aufgaben pausiert"
       }
     },
     "time": {
       "default_due_time": {
         "name": "Standardfrist"
-      },
-      "restriction_start": {
-        "name": "Sperrzeit ab"
-      },
-      "restriction_end": {
-        "name": "Sperrzeit bis"
       }
     },
     "number": {
+      "lock_minutes": {
+        "name": "Sperrdauer"
+      },
       "late_pause_minutes": {
         "name": "Pause bei Verspätung"
       },
@@ -192,12 +194,40 @@
         "completion_id": {
           "name": "Erledigungs-ID",
           "description": "completionId aus dem Ereignis lommepenge_event."
+        },
+        "reason": {
+          "name": "Begründung",
+          "description": "Optional. Wird dem Kind in der Benachrichtigung angezeigt."
         }
       }
     },
-    "suspend_restriction": {
-      "name": "Sperre heute aufheben",
-      "description": "Hebt die Sperre des Kindes für den Rest des Tages auf.",
+    "lift_lock": {
+      "name": "Sperre aufheben",
+      "description": "Hebt die wartende und laufende Sperre des Kindes auf. Neue überfällige oder abgelehnte Aufgaben können das Tablet wieder sperren.",
+      "fields": {
+        "child_id": {
+          "name": "Kind-ID",
+          "description": "Das Attribut child_id des Sensors \"Tablet gesperrt\" des Kindes."
+        }
+      }
+    },
+    "pause": {
+      "name": "Aufgaben pausieren",
+      "description": "Pausiert das Kind: keine Aufgabe ist Pflicht (keine Frist, keine Sperre), aber die Aufgaben bringen weiterhin Geld. Hebt auch die Sperre des Kindes auf.",
+      "fields": {
+        "child_id": {
+          "name": "Kind-ID",
+          "description": "Das Attribut child_id des Sensors \"Tablet gesperrt\" des Kindes."
+        },
+        "until": {
+          "name": "Bis",
+          "description": "Das Datum, ab dem die Aufgaben wieder Pflicht sind (ab Mitternacht). Leer = bis zur Fortsetzung."
+        }
+      }
+    },
+    "resume": {
+      "name": "Aufgaben fortsetzen",
+      "description": "Beendet die Pause des Kindes: die Aufgaben sind ab jetzt wieder Pflicht.",
       "fields": {
         "child_id": {
           "name": "Kind-ID",

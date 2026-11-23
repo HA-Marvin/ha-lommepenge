@@ -96,7 +96,8 @@ class LommepengeConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 2
     # 2.2: the language for HA's own texts is stored in the entry's data.
-    MINOR_VERSION = 2
+    # 2.3: the restriction window and "lift today" entities are removed (Del H4).
+    MINOR_VERSION = 3
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}

@@ -134,22 +134,24 @@
       }
     },
     "button": {
-      "suspend_restriction": {
-        "name": "Quitar bloqueo hoy"
+      "lift_lock": {
+        "name": "Quitar bloqueo"
+      }
+    },
+    "switch": {
+      "paused": {
+        "name": "Tareas en pausa"
       }
     },
     "time": {
       "default_due_time": {
         "name": "Hora límite predeterminada"
-      },
-      "restriction_start": {
-        "name": "Bloqueo desde"
-      },
-      "restriction_end": {
-        "name": "Bloqueo hasta"
       }
     },
     "number": {
+      "lock_minutes": {
+        "name": "Duración del bloqueo"
+      },
       "late_pause_minutes": {
         "name": "Pausa si se hace tarde"
       },
@@ -192,12 +194,40 @@
         "completion_id": {
           "name": "ID de realización",
           "description": "completionId del evento lommepenge_event."
+        },
+        "reason": {
+          "name": "Motivo",
+          "description": "Opcional. Se muestra al niño en la notificación."
         }
       }
     },
-    "suspend_restriction": {
-      "name": "Quitar bloqueo hoy",
-      "description": "Quita el bloqueo del niño durante el resto del día.",
+    "lift_lock": {
+      "name": "Quitar bloqueo",
+      "description": "Quita el bloqueo pendiente y activo del niño. Nuevas tareas atrasadas o rechazadas pueden volver a bloquear la tableta.",
+      "fields": {
+        "child_id": {
+          "name": "ID del niño",
+          "description": "El atributo child_id del sensor \"Tableta bloqueada\" del niño."
+        }
+      }
+    },
+    "pause": {
+      "name": "Pausar tareas",
+      "description": "Pausa al niño: ninguna tarea es obligatoria (sin límite, sin bloqueo), pero las tareas siguen dando dinero. También quita el bloqueo del niño.",
+      "fields": {
+        "child_id": {
+          "name": "ID del niño",
+          "description": "El atributo child_id del sensor \"Tableta bloqueada\" del niño."
+        },
+        "until": {
+          "name": "Hasta",
+          "description": "La fecha en que las tareas vuelven a ser obligatorias (desde medianoche). Vacío = hasta reanudar."
+        }
+      }
+    },
+    "resume": {
+      "name": "Reanudar tareas",
+      "description": "Termina la pausa del niño: las tareas vuelven a ser obligatorias desde ahora.",
       "fields": {
         "child_id": {
           "name": "ID del niño",

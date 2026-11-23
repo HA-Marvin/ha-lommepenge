@@ -45,8 +45,9 @@ from .i18n import LocalizedError, normalize_language
 
 STORAGE_VERSION = 1
 # 1.2 (Del H): completions have `occurrenceDate`, the family has `missed` and
-# `cleanedThrough`. A minor version, so an older integration can still read it.
-STORAGE_MINOR_VERSION = 2
+# `cleanedThrough`. 1.3 (Del H3/H4): `locks` and `notifications`, no
+# restriction window. Minor versions, so an older integration can still read it.
+STORAGE_MINOR_VERSION = 3
 SAVE_DELAY = 2
 
 # The pairing code can be typed on a device without a camera: 8 characters
@@ -92,8 +93,12 @@ class _FamilyStore(Store[dict[str, Any]]):
     ) -> dict[str, Any]:
         if old_major_version > STORAGE_VERSION:
             raise NotImplementedError
-        if old_major_version == 1 and old_minor_version < 2 and old_data.get("family"):
-            migrate_family(old_data["family"], local_now())
+        if (
+            old_major_version == 1
+            and old_minor_version < STORAGE_MINOR_VERSION
+            and old_data.get("family")
+        ):
+            migrate_family(old_data["family"], local_now(), old_minor_version)
         return old_data
 
 
@@ -190,12 +195,15 @@ class LommepengeRuntime:
     ) -> dict[str, Any] | None:
         """Performs an action from a device (or from HA itself, `device=None`).
 
-        A child's tablet may only mark its own child's tasks as done - that is
-        enforced here and not just by hiding buttons in the app.
+        A child's tablet may only mark its own child's tasks as done and
+        report its own use - that is enforced here and not just by hiding
+        buttons in the app. Only a tablet reports use.
         """
         if device is not None and device["role"] == ROLE_CHILD:
             if not logic.is_action_allowed_for_child(action, device.get("childId") or ""):
                 raise ForbiddenError("forbidden_action")
+        elif device is not None and action.get("type") in logic.CHILD_ONLY_ACTIONS:
+            raise ForbiddenError("forbidden_action")
         async with self._lock:
             result = self.family.apply_action(action, local_now())
         self.async_schedule_save()
@@ -203,27 +211,31 @@ class LommepengeRuntime:
             self.coordinator.async_refresh_now()
         return result
 
-    async def async_cleanup(self) -> list[dict[str, Any]]:
-        """The midnight cleanup (Del H2). Called by the coordinator every 30
-        seconds; it only does something once a day has ended."""
+    async def async_tick(self) -> list[dict[str, Any]]:
+        """Called by the coordinator every 30 seconds: the midnight cleanup
+        (Del H2, only does something once a day has ended), then the locks,
+        pauses and notifications (Del H3/H4). Returns the new `missed` records."""
         async with self._lock:
+            now = local_now()
             before = self.family.data.get("cleanedThrough")
-            records = self.family.cleanup(local_now())
-        if records or self.family.data.get("cleanedThrough") != before:
+            records = self.family.cleanup(now)
+            changed = self.family.tick(now)
+        if changed or records or self.family.data.get("cleanedThrough") != before:
             self.async_schedule_save()
         return records
 
     # ---- The app's data ------------------------------------------------------------
 
-    def state_for(self, device: dict[str, Any]) -> dict[str, Any]:
-        """What a device gets to see: the whole family, or only one child."""
+    def state_for(self, device: dict[str, Any], language: str | None = None) -> dict[str, Any]:
+        """What a device gets to see: the whole family, or only one child.
+        Texts (lock reason, notifications) are in `language` (the app's)."""
         if device["role"] == ROLE_CHILD:
             # A tablet without a child (should not happen) sees no child.
             state = self.family.state_json(
-                self.family_name, local_now(), device.get("childId") or ""
+                self.family_name, local_now(), device.get("childId") or "", language
             )
         else:
-            state = self.family.state_json(self.family_name, local_now())
+            state = self.family.state_json(self.family_name, local_now(), language=language)
             # The parent part on the screen and phones is locked with the family's PIN.
             state["pinHash"] = self.entry.data.get(CONF_PIN_HASH)
             state["pinSalt"] = self.entry.data.get(CONF_PIN_SALT)
@@ -244,6 +256,7 @@ class LommepengeRuntime:
         before: date | None,
         child_id: str | None,
         types: set[str] | None,
+        language: str | None = None,
     ) -> dict[str, Any]:
         """A page of history. A child's tablet only gets its own child's."""
         if device["role"] == ROLE_CHILD:
@@ -253,7 +266,7 @@ class LommepengeRuntime:
             child_id = own
         if before is None:
             before = local_now().date() + timedelta(days=1)
-        return self.family.history(before, child_id, types)
+        return self.family.history(before, child_id, types, language)
 
     # ---- Devices and pairing ---------------------------------------------------------
 

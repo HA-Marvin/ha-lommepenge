@@ -61,12 +61,17 @@ FOLLOW_UP_INTERVAL = timedelta(seconds=30)
 RELEASE_CHECK_INTERVAL = timedelta(hours=6)
 
 # Event on HA's event bus (completion_pending, completion_approved,
-# completion_rejected, restriction_changed). Used by the blueprints.
+# completion_rejected, lock_started, lock_ended, lock_lifted). Used by the
+# blueprints.
 EVENT_LOMMEPENGE = "lommepenge_event"
 
 SERVICE_APPROVE = "approve"
 SERVICE_REJECT = "reject"
-SERVICE_SUSPEND_RESTRICTION = "suspend_restriction"
+SERVICE_LIFT_LOCK = "lift_lock"
+SERVICE_PAUSE = "pause"
+SERVICE_RESUME = "resume"
 
 ATTR_COMPLETION_ID = "completion_id"
 ATTR_CHILD_ID = "child_id"
+ATTR_REASON = "reason"
+ATTR_UNTIL = "until"

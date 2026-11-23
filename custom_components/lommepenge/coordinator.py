@@ -22,9 +22,9 @@ LommepengeError = FamilyError
 
 
 class LommepengeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Recalculates the overview every 30 seconds (deadlines pass) and right
-    after every action. Fires `lommepenge_event` for new or decided approvals
-    and changed restrictions."""
+    """Recalculates the overview every 30 seconds (deadlines pass, locks run
+    out) and right after every action. Fires `lommepenge_event` for new or
+    decided approvals and for locks that start, end or are lifted."""
 
     config_entry: LommepengeConfigEntry
 
@@ -41,12 +41,12 @@ class LommepengeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.runtime = runtime
         self._last_pending: dict[str, dict[str, Any]] | None = None
-        self._last_restricted: dict[str, bool] = {}
 
     async def _async_update_data(self) -> dict[str, Any]:
         # The midnight cleanup runs on the first update after midnight (and
-        # catches up at startup if HA was down at midnight).
-        await self.runtime.async_cleanup()
+        # catches up at startup if HA was down at midnight); then the locks,
+        # pauses and notifications move on.
+        await self.runtime.async_tick()
         return self._compute()
 
     @callback
@@ -66,17 +66,17 @@ class LommepengeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @callback
     def _fire_events(self, summary: dict[str, Any]) -> None:
+        family = self.runtime.family
         pending = {p["completionId"]: p for p in summary["pending"]}
-        restricted = {c["id"]: c for c in summary["children"]}
+        # Lock events happen once (started, ended, lifted) - also right after
+        # startup, e.g. a lock that ran out while HA was down.
+        events: list[dict[str, Any]] = [
+            self._lock_event(event) for event in family.pop_events()
+        ]
         if self._last_pending is None:
             # The first calculation after startup is the baseline - no events
             # for what was already waiting.
             self._last_pending = pending
-            self._last_restricted = {k: c["restricted"] for k, c in restricted.items()}
-            return
-
-        family = self.runtime.family
-        events: list[dict[str, Any]] = []
         for completion_id in pending.keys() - self._last_pending.keys():
             events.append({"event": "completion_pending", **pending[completion_id]})
         for completion_id in self._last_pending.keys() - pending.keys():
@@ -93,25 +93,27 @@ class LommepengeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     ),
                 }
             )
-        for child_id, child in restricted.items():
-            if self._last_restricted.get(child_id, False) == child["restricted"]:
-                continue
-            events.append(
-                {
-                    "event": "restriction_changed",
-                    "childId": child_id,
-                    "childName": child["name"],
-                    "restricted": child["restricted"],
-                    "reason": child["reason"],
-                }
-            )
 
         self._last_pending = pending
-        self._last_restricted = {k: c["restricted"] for k, c in restricted.items()}
         for event in events:
             self.hass.bus.async_fire(
                 EVENT_LOMMEPENGE, {**event, "config_entry_id": self.config_entry.entry_id}
             )
+
+    def _lock_event(self, event: dict[str, Any]) -> dict[str, Any]:
+        """`lock_started`, `lock_ended` or `lock_lifted` with the lock's details;
+        `reason` is in the integration's language."""
+        family = self.runtime.family
+        lock = next(lock for lock in family.data["locks"] if lock["id"] == event["lockId"])
+        child = family.child(event["childId"]) or {}
+        return {
+            **event,
+            "childName": child.get("name", ""),
+            "reason": family.reason_text(lock["causes"], self.runtime.language),
+            "minutes": lock.get("minutes"),
+            "startedAt": lock.get("startedAt"),
+            "endsAt": lock.get("endsAt"),
+        }
 
     async def async_action(self, action_type: str, payload: dict[str, Any]) -> None:
         """An action from HA itself (entity or service)."""

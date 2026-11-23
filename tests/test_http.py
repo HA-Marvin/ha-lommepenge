@@ -224,6 +224,74 @@ async def test_child_tablet_is_limited(
     response = await tablet.action("approve_completion", {"completionId": pending["id"]})
     assert response.status == 403
     assert (await tablet.action("add_child", {"name": "Hacker"})).status == 403
+    # Locks are for parents to lift.
+    assert (await tablet.action("lift_lock", {"childId": "emma"})).status == 403
+    assert (await tablet.action("set_pause", {"childId": "emma", "paused": True})).status == 403
+
+
+async def test_tablet_reports_use_and_gets_lock_and_notifications(
+    hass: HomeAssistant, config_entry: MockConfigEntry, hass_client_no_auth, freezer
+) -> None:
+    """Del H3/H4: the tablet reports use; the lock and the child's
+    notifications come with the state, in the app's language."""
+    freezer.move_to("2026-11-23 12:00:00+01:00")
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+    runtime = await setup_entry(hass, config_entry)
+    await add_child(runtime, "emma", "Emma")
+    await runtime.async_apply(
+        {
+            "type": "create_task",
+            "payload": {
+                "id": "t1",
+                "title": "Make the bed",
+                "amountOre": 500,
+                "recurrence": "daily",
+                "mandatory": True,
+            },
+        }
+    )
+    client = await hass_client_no_auth()
+    tablet = await paired_app(
+        hass, config_entry, client, "Emma's tablet", ROLE_CHILD, "emma", language="da"
+    )
+    parent = await paired_app(hass, config_entry, client, "Mum", ROLE_PARENT)
+
+    freezer.move_to("2026-11-23 18:05:00+01:00")
+    await runtime.async_tick()
+    state = await (await tablet.state()).json()
+    child = state["children"][0]
+    assert child["lock"]["status"] == "pending"
+    assert child["lock"]["reason"] == "Mangler: Make the bed (frist 18:00)"
+    assert [n["type"] for n in child["notifications"]] == ["overdue"]
+    assert child["notifications"][0]["message"] == (
+        "Make the bed skulle være lavet kl. 18:00 – gør det nu"
+    )
+
+    # Only a tablet reports use - and only for its own child.
+    use = {"childId": "emma", "event": "screen_on", "at": int(time.time())}
+    assert (await parent.action("report_use", use)).status == 403
+    assert (await tablet.action("report_use", {**use, "childId": "oscar"})).status == 403
+    response = await tablet.action("report_use", use)
+    assert response.status == 200
+    lock = (await response.json())["children"][0]["lock"]
+    assert lock["status"] == "running"
+    assert lock["endsAt"] == "2026-11-23T19:05:00.000"
+    response = await tablet.action("report_use", {**use, "event": "nonsense"})
+    assert response.status == 400 and (await response.json())["code"] == "missing_field"
+
+    # Parents see the lock, not the child's notifications, and lift it.
+    state = await (await parent.state()).json()
+    assert state["children"][0]["lock"]["status"] == "running"
+    assert "notifications" not in state["children"][0]
+    assert state["settings"]["lockMinutes"] == 60
+    freezer.move_to("2026-11-23 18:20:00+01:00")
+    response = await parent.action("lift_lock", {"childId": "emma"})
+    assert (await response.json())["children"][0]["lock"]["status"] == "none"
+
+    history = await (
+        await parent.get_signed("/api/lommepenge/history?types=lock")
+    ).json()
+    assert [i["lockEvent"] for i in history["items"]] == ["lifted", "started"]
 
 
 async def test_removed_device_is_revoked(
