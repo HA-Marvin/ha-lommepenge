@@ -174,21 +174,5 @@ def test_child_scope() -> None:
     assert not logic.is_action_allowed_for_child(
         {"type": "approve_completion", "payload": {"childId": "emma"}}, "emma"
     )
-    state = {
-        "children": [{"id": "emma"}, {"id": "oscar"}],
-        "tasks": [
-            {"id": "a", "assignedChildIds": None},
-            {"id": "b", "assignedChildIds": ["oscar"]},
-        ],
-        "completions": [{"childId": "emma"}, {"childId": "oscar"}],
-        "balanceAdjustments": [{"childId": "oscar"}],
-        "paidOutOreByChild": {"emma": 100, "oscar": 200},
-        "restrictionSuspensions": {"oscar": "2026-11-23"},
-    }
-    filtered = logic.filter_state_for_child(state, "emma")
-    assert filtered["children"] == [{"id": "emma"}]
-    assert [t["id"] for t in filtered["tasks"]] == ["a"]
-    assert filtered["completions"] == [{"childId": "emma"}]
-    assert filtered["balanceAdjustments"] == []
-    assert filtered["paidOutOreByChild"] == {"emma": 100}
-    assert filtered["restrictionSuspensions"] == {}
+    assert logic.task_applies_to_child({"assignedChildIds": None}, "emma")
+    assert not logic.task_applies_to_child({"assignedChildIds": ["oscar"]}, "emma")

@@ -1,14 +1,15 @@
 """The family's data and actions - HA is the "source of truth".
 
-A direct translation of the app's `TaskRepository`: the same actions
+Originally a translation of the app's `TaskRepository`: the same actions
 (`create_task`, `complete_task`, `approve_completion` ...) with the same
-rules and error messages, and the same JSON shape as the app's sync
-protocol, so the app can use HA's responses directly as its local cache.
+error messages. Since Del H the app is a pure view: HA keeps all history and
+sends the app only the current state, calculated here (`state_json`), and the
+history on request (`history`).
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 import uuid
 
@@ -30,7 +31,40 @@ def empty_family() -> dict[str, Any]:
         "paidOutOreByChild": {},
         "familySettings": dict(logic.DEFAULT_SETTINGS),
         "restrictionSuspensions": {},
+        # Occurrences that were late and not done at midnight (no money).
+        "missed": [],
+        # The last day whose midnight cleanup has run ("YYYY-MM-DD").
+        "cleanedThrough": None,
     }
+
+
+# History types. Locks (Del H4) will be added as their own type.
+HISTORY_TYPES = ("approved", "rejected", "adjustment", "missed")
+HISTORY_PAGE_DAYS = 30
+# How many days back a cleanup catches up after HA has been down.
+MAX_CLEANUP_DAYS = 31
+MAX_ID_LENGTH = 100
+
+
+def migrate_family(data: dict[str, Any], now: datetime) -> dict[str, Any]:
+    """Stored family data from before Del H (storage 1.1) -> 1.2.
+
+    - Completions get `occurrenceDate` (the day they were done).
+    - Active tasks get `availableFrom` = now, so occurrences from before the
+      upgrade are never counted as missed (a one-off task that used to come
+      back every day would otherwise be deactivated at the first midnight).
+    - `missed` and `cleanedThrough` are added.
+    """
+    for completion in data.get("completions", []):
+        completion.setdefault(
+            "occurrenceDate", logic.date_key(logic.parse_dt(completion["completedAt"]))
+        )
+    for task in data.get("tasks", []):
+        if task.get("active", True):
+            task.setdefault("availableFrom", logic.to_iso(now))
+    data.setdefault("missed", [])
+    data.setdefault("cleanedThrough", logic.date_key(now - timedelta(days=1)))
+    return data
 
 
 def _new_id() -> str:
@@ -97,6 +131,143 @@ class Family:
             for c in self.data["completions"]
             if c["childId"] == child_id and (task_id is None or c["taskId"] == task_id)
         ]
+
+    # ---- The child's task list (Del H2) ------------------------------------------------
+
+    def _since(self, task: dict[str, Any], child_id: str) -> datetime:
+        """When the task started to apply to the child."""
+        since = logic.parse_dt(task.get("availableFrom") or task["createdAt"])
+        child = self.child(child_id)
+        if child is not None:
+            since = max(since, logic.parse_dt(child["createdAt"]))
+        return since
+
+    def _missed_days(self, child_id: str, task_id: str) -> set[date]:
+        return {
+            date.fromisoformat(m["date"])
+            for m in self.data["missed"]
+            if m["childId"] == child_id and m["taskId"] == task_id
+        }
+
+    def occurrence(
+        self, task: dict[str, Any], child_id: str, now: datetime
+    ) -> dict[str, Any] | None:
+        """The child's next occurrence of the task (see `logic.next_occurrence`)."""
+        if not task.get("active", True):
+            return None
+        return logic.next_occurrence(
+            task,
+            self._completions_for(child_id, task["id"]),
+            self._missed_days(child_id, task["id"]),
+            self.settings,
+            now,
+            self._since(task, child_id),
+        )
+
+    def task_entries(self, child_id: str, now: datetime) -> list[dict[str, Any]]:
+        """One entry per task for the child, within the 5-day horizon."""
+        entries = []
+        for task in self.active_tasks:
+            if child_id not in self.resolved_child_ids(task):
+                continue
+            occurrence = self.occurrence(task, child_id, now)
+            if not logic.in_view(occurrence, now):
+                continue
+            completion = occurrence["completion"]
+            deadline = occurrence["deadline"]
+            entries.append(
+                {
+                    "taskId": task["id"],
+                    "title": task["title"],
+                    "description": task.get("description"),
+                    "amountOre": (
+                        completion["amountAtCompletionOre"] if completion else task["amountOre"]
+                    ),
+                    "recurrence": task.get("recurrence", "once"),
+                    "mandatory": bool(task.get("mandatory")),
+                    "startTime": task.get("startTime"),
+                    "dueTime": task.get("dueTime"),
+                    "date": logic.date_key(occurrence["date"]),
+                    "deadline": logic.to_iso(deadline) if deadline else None,
+                    "status": occurrence["status"],
+                    "completionId": completion["id"] if completion else None,
+                    "late": bool(completion.get("late")) if completion else False,
+                }
+            )
+        status_order = {logic.OVERDUE: 0, logic.AVAILABLE: 1, logic.AWAITING_APPROVAL: 2}
+        entries.sort(
+            key=lambda e: (
+                e["date"],
+                status_order.get(e["status"], 3),
+                e["deadline"] or "~",
+                e["title"].lower(),
+            )
+        )
+        return entries
+
+    # ---- Midnight cleanup (Del H2) ------------------------------------------------------
+
+    def cleanup(self, now: datetime) -> list[dict[str, Any]]:
+        """Drops every occurrence that was late and not done at midnight.
+
+        Runs for each day that has ended since the last run (HA may have been
+        down at midnight), so it is safe to call as often as you like. A missed
+        occurrence gives no money; it is kept in `missed` for the history and
+        so that the next occurrence moves on (a weekly task: 7 days from the
+        missed deadline). A missed one-off task is deactivated for good.
+        Returns the new `missed` records.
+        """
+        today = now.date()
+        last = self.data.get("cleanedThrough")
+        if last is None:
+            # A new family: nothing can have been missed before today.
+            self.data["cleanedThrough"] = logic.date_key(today - timedelta(days=1))
+            return []
+        day = max(
+            date.fromisoformat(last) + timedelta(days=1),
+            today - timedelta(days=MAX_CLEANUP_DAYS),
+        )
+        records: list[dict[str, Any]] = []
+        while day < today:
+            end_of_day = datetime(day.year, day.month, day.day) + timedelta(
+                days=1, microseconds=-1
+            )
+            records.extend(self._cleanup_day(end_of_day, now))
+            day += timedelta(days=1)
+        self.data["cleanedThrough"] = logic.date_key(today - timedelta(days=1))
+        return records
+
+    def _cleanup_day(self, end_of_day: datetime, now: datetime) -> list[dict[str, Any]]:
+        records = []
+        for task in self.active_tasks:
+            once_missed = False
+            for child_id in self.resolved_child_ids(task):
+                # A weekly task can have several missed occurrences in a row
+                # if HA was down for long; each one moves the next by 7 days.
+                for _ in range(MAX_CLEANUP_DAYS):
+                    occurrence = self.occurrence(task, child_id, end_of_day)
+                    if occurrence is None or occurrence["status"] != logic.OVERDUE:
+                        break
+                    record = {
+                        "id": _new_id(),
+                        "taskId": task["id"],
+                        "childId": child_id,
+                        "date": logic.date_key(occurrence["date"]),
+                        "deadline": logic.to_iso(occurrence["deadline"]),
+                        "amountOre": task["amountOre"],
+                        "missedAt": logic.to_iso(now),
+                    }
+                    self.data["missed"].append(record)
+                    records.append(record)
+                    # Hook for the locks (Del H4, session 3a): a lock that is
+                    # still waiting because of this occurrence must stay (and
+                    # expire after 24 hours) - the cleanup does NOT clear it.
+                    if task.get("recurrence", "once") == "once":
+                        once_missed = True
+                        break
+            if once_missed:
+                task["active"] = False  # gone for good; a parent must create it again
+        return records
 
     # ---- Balance -----------------------------------------------------------------
 
@@ -198,13 +369,15 @@ class Family:
 
     def _action_create_task(self, payload: dict[str, Any], now: datetime) -> None:
         task_id = payload.get("id") or _new_id()
+        existing = self.task(task_id)
         task = {
             "id": task_id,
             **self._task_fields(payload, None),
-            "createdAt": logic.to_iso(now),
+            # A retry keeps the original creation time.
+            "createdAt": existing["createdAt"] if existing else logic.to_iso(now),
             "active": True,
         }
-        # The same id twice (e.g. a repeated offline action) replaces.
+        # The same id twice (e.g. a retried action) replaces.
         self.data["tasks"] = [t for t in self.data["tasks"] if t["id"] != task_id] + [task]
 
     def _action_update_task(self, payload: dict[str, Any], now: datetime) -> None:
@@ -221,17 +394,19 @@ class Family:
     def _action_complete_task(self, payload: dict[str, Any], now: datetime) -> dict[str, Any]:
         child_id = _require_str(payload, "childId", "missing_child_id")
         completion_id = payload.get("completionId") or _new_id()
+        if not isinstance(completion_id, str) or len(completion_id) > MAX_ID_LENGTH:
+            raise FamilyError("missing_field", field="completionId")
         if (existing := self.completion(completion_id)) is not None:
-            return existing  # the same action sent again (offline queue)
+            # The same action sent again (e.g. after a timeout): success,
+            # without a second completion.
+            return existing
         task = self.task(_require_str(payload, "taskId", "missing_task"))
         if task is None or not task.get("active", True):
             raise FamilyError("task_not_found")
         if child_id not in self.resolved_child_ids(task):
             raise FamilyError("task_not_assigned")
-        if (
-            logic.compute_availability(task, self._completions_for(child_id, task["id"]), now)
-            != logic.AVAILABLE
-        ):
+        occurrence = self.occurrence(task, child_id, now)
+        if occurrence is None or occurrence["status"] not in (logic.AVAILABLE, logic.OVERDUE):
             raise FamilyError("task_not_available")
         # HA's clock decides the time (and thereby "late"), not the tablet's -
         # a child cannot cheat by setting the clock back.
@@ -240,32 +415,34 @@ class Family:
             "taskId": task["id"],
             "childId": child_id,
             "completedAt": logic.to_iso(now),
+            "occurrenceDate": logic.date_key(occurrence["date"]),
             "status": "pending",
             "approvedAt": None,
             "amountAtCompletionOre": task["amountOre"],
-            "late": logic.is_late(task, self.settings, now),
+            "late": occurrence["status"] == logic.OVERDUE,
         }
         self.data["completions"].append(completion)
         return completion
 
-    def _pending_completion(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def _decide(self, payload: dict[str, Any], status: str, now: datetime) -> dict[str, Any]:
+        """Approves or rejects. The first answer counts; the same answer again
+        (a retry, or the other parent) is a success without changes."""
         completion = self.completion(_require_str(payload, "completionId", "missing_completion"))
         if completion is None:
             raise FamilyError("completion_not_found")
+        if completion["status"] == status:
+            return completion
         if completion["status"] != "pending":
             raise FamilyError("completion_already_handled")
+        completion["status"] = status
+        completion["approvedAt" if status == "approved" else "rejectedAt"] = logic.to_iso(now)
         return completion
 
     def _action_approve_completion(self, payload: dict[str, Any], now: datetime) -> dict[str, Any]:
-        completion = self._pending_completion(payload)
-        completion["status"] = "approved"
-        completion["approvedAt"] = logic.to_iso(now)
-        return completion
+        return self._decide(payload, "approved", now)
 
     def _action_reject_completion(self, payload: dict[str, Any], now: datetime) -> dict[str, Any]:
-        completion = self._pending_completion(payload)
-        completion["status"] = "rejected"
-        return completion
+        return self._decide(payload, "rejected", now)
 
     def _existing_child_id(self, payload: dict[str, Any], key: str = "childId") -> str:
         child_id = _require_str(payload, key, "missing_child_id")
@@ -318,7 +495,8 @@ class Family:
         self.child(child_id)["name"] = name
 
     def _action_delete_child(self, payload: dict[str, Any], now: datetime) -> None:
-        child_id = self._existing_child_id(payload, "id")
+        # Deleting a child that is already gone (a retry) is a success.
+        child_id = _require_str(payload, "id", "missing_child_id")
         self.data["children"] = [c for c in self.data["children"] if c["id"] != child_id]
 
     def _action_suspend_restriction(self, payload: dict[str, Any], now: datetime) -> None:
@@ -334,21 +512,149 @@ class Family:
 
     # ---- Exports -------------------------------------------------------------------
 
-    def state_json(self, family_name: str, now: datetime) -> dict[str, Any]:
-        """All the family's data in the app's sync format (`getStateJson`)."""
-        return {
-            "deviceName": family_name,
+    def state_json(
+        self, family_name: str, now: datetime, child_id: str | None = None
+    ) -> dict[str, Any]:
+        """The current state for the app (Del H1), calculated by HA - no history.
+
+        With `child_id` (a child's tablet) only that child's own data;
+        otherwise all children plus what the parent part needs: the approval
+        list, the full task list for editing and the settings.
+        """
+        children = [
+            c for c in self.children if child_id is None or c["id"] == child_id
+        ]
+        state: dict[str, Any] = {
             "familyName": family_name,
-            "children": self.children,
-            "tasks": self.data["tasks"],
-            "completions": self.data["completions"],
-            "balanceAdjustments": self.data["balanceAdjustments"],
-            "totalPaidOutOre": 0,
-            "paidOutOreByChild": self.data["paidOutOreByChild"],
-            "familySettings": self.settings,
-            "restrictionSuspensions": self.data["restrictionSuspensions"],
-            "updatedAt": logic.to_iso(now),
+            "serverTime": logic.to_iso(now),
+            "today": logic.date_key(now),
+            "children": [
+                {
+                    "id": child["id"],
+                    "name": child["name"],
+                    "sortOrder": child["sortOrder"],
+                    "balanceOre": self.balance_ore(child["id"]),
+                    "earnedThisWeekOre": self.earned_this_week_ore(child["id"], now),
+                    "tasks": self.task_entries(child["id"], now),
+                    # Session 3a adds the child's lock status here.
+                }
+                for child in children
+            ],
         }
+        if child_id is not None:
+            return state
+        state["approvals"] = [
+            {key: value for key, value in self.completion_json(c).items() if key != "message"}
+            for c in sorted(self.data["completions"], key=lambda c: c["completedAt"])
+            if c["status"] == "pending" and self.child(c["childId"]) is not None
+        ]
+        state["tasks"] = [
+            {
+                key: task.get(key)
+                for key in (
+                    "id",
+                    "title",
+                    "description",
+                    "amountOre",
+                    "recurrence",
+                    "mandatory",
+                    "activeWeekdays",
+                    "assignedChildIds",
+                    "startTime",
+                    "dueTime",
+                    "showInCalendar",
+                    "createdAt",
+                )
+            }
+            for task in sorted(self.active_tasks, key=lambda t: t["createdAt"])
+        ]
+        state["settings"] = dict(self.settings)
+        return state
+
+    # ---- History on request (Del H2) ---------------------------------------------------
+
+    def history(
+        self,
+        before: date,
+        child_id: str | None = None,
+        types: set[str] | None = None,
+    ) -> dict[str, Any]:
+        """One page of history: the 30 days before `before` (exclusive), newest
+        first. `nextBefore` is the `before` of the next (older) page, or `None`
+        when nothing older exists."""
+        start = before - timedelta(days=HISTORY_PAGE_DAYS)
+        items = [
+            item
+            for item in self._history_items()
+            if (child_id is None or item["childId"] == child_id)
+            and (types is None or item["type"] in types)
+        ]
+        page = [i for i in items if start <= logic.parse_dt(i["at"]).date() < before]
+        page.sort(key=lambda i: logic.parse_dt(i["at"]), reverse=True)
+        older = any(logic.parse_dt(i["at"]).date() < start for i in items)
+        return {
+            "from": logic.date_key(start),
+            "before": logic.date_key(before),
+            "items": page,
+            "nextBefore": logic.date_key(start) if older else None,
+        }
+
+    def _history_items(self) -> list[dict[str, Any]]:
+        def names(child_id: str, task_id: str | None) -> dict[str, Any]:
+            child = self.child(child_id) or {}
+            task = (self.task(task_id) if task_id else None) or {}
+            return {
+                "childId": child_id,
+                "childName": child.get("name", ""),
+                "taskId": task_id,
+                "taskTitle": task.get("title") if task_id else None,
+            }
+
+        items: list[dict[str, Any]] = []
+        for c in self.data["completions"]:
+            if c["status"] == "pending":
+                continue
+            decided = c.get("approvedAt") if c["status"] == "approved" else c.get("rejectedAt")
+            items.append(
+                {
+                    "id": c["id"],
+                    "type": c["status"],  # "approved" or "rejected"
+                    "at": decided or c["completedAt"],
+                    **names(c["childId"], c["taskId"]),
+                    "amountOre": c["amountAtCompletionOre"],
+                    "completedAt": c["completedAt"],
+                    "late": bool(c.get("late")),
+                    "note": None,
+                }
+            )
+        for a in self.data["balanceAdjustments"]:
+            items.append(
+                {
+                    "id": a["id"],
+                    "type": "adjustment",
+                    "at": a["createdAt"],
+                    **names(a["childId"], None),
+                    "amountOre": a["amountOre"],
+                    "completedAt": None,
+                    "late": False,
+                    "note": a.get("note"),
+                }
+            )
+        for m in self.data["missed"]:
+            items.append(
+                {
+                    "id": m["id"],
+                    "type": "missed",
+                    "at": m["deadline"],
+                    **names(m["childId"], m["taskId"]),
+                    "amountOre": m["amountOre"],
+                    "completedAt": None,
+                    "late": False,
+                    "note": None,
+                }
+            )
+        # Session 3a: locks are added here as type "lock".
+        return items
 
     def completion_json(
         self,

@@ -209,3 +209,68 @@ def test_now_is_naive_local() -> None:
     from custom_components.lommepenge.runtime import local_now
 
     assert isinstance(local_now(), datetime) and local_now().tzinfo is None
+
+
+async def test_old_storage_is_migrated(
+    hass: HomeAssistant, config_entry: MockConfigEntry, hass_storage, freezer
+) -> None:
+    """Storage 1.1 (before Del H) -> 1.2: completions get their occurrence day."""
+    freezer.move_to("2026-11-23 12:00:00+01:00")
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+    hass_storage[f"{DOMAIN}.{config_entry.entry_id}"] = {
+        "version": 1,
+        "key": f"{DOMAIN}.{config_entry.entry_id}",
+        "data": {
+            "family": {
+                "children": [
+                    {"id": "emma", "name": "Emma", "sortOrder": 0,
+                     "createdAt": "2026-01-01T10:00:00.000"}
+                ],
+                "tasks": [
+                    {"id": "t1", "title": "Tidy up", "amountOre": 300, "recurrence": "once",
+                     "mandatory": True, "createdAt": "2026-10-01T10:00:00.000", "active": True}
+                ],
+                "completions": [
+                    {"id": "c1", "taskId": "t1", "childId": "emma",
+                     "completedAt": "2026-11-20T10:00:00.000", "status": "rejected",
+                     "approvedAt": None, "amountAtCompletionOre": 300, "late": False}
+                ],
+                "balanceAdjustments": [],
+                "paidOutOreByChild": {},
+                "familySettings": {"defaultDueTime": "18:00"},
+                "restrictionSuspensions": {},
+            },
+            "devices": {},
+            "pairings": {},
+        },
+    }
+    runtime = await setup_entry(hass, config_entry)
+    family = runtime.family
+    assert family.completion("c1")["occurrenceDate"] == "2026-11-20"
+    # The old one-off task is still there (not missed for its old deadline).
+    assert family.task("t1")["active"] is True
+    assert family.task_entries("emma", datetime(2026, 11, 23, 12))[0]["status"] == "available"
+    stored = hass_storage[f"{DOMAIN}.{config_entry.entry_id}"]
+    assert stored["minor_version"] == 2
+
+
+async def test_cleanup_runs_at_midnight(
+    hass: HomeAssistant, config_entry: MockConfigEntry, freezer
+) -> None:
+    freezer.move_to("2026-11-23 16:00:00+01:00")
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+    runtime = await _family_with_task(hass, config_entry)
+    assert runtime.family.data["missed"] == []
+
+    freezer.move_to("2026-11-23 23:59:00+01:00")
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert runtime.family.data["missed"] == []
+
+    freezer.move_to("2026-11-24 00:00:30+01:00")
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    missed = runtime.family.data["missed"]
+    assert [(m["childId"], m["date"]) for m in missed] == [("emma", "2026-11-23")]
+    entry = runtime.family.task_entries("emma", datetime(2026, 11, 24, 0, 1))[0]
+    assert entry["date"] == "2026-11-24" and entry["status"] == "available"

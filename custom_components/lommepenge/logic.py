@@ -1,10 +1,9 @@
-"""The family's rules: availability, deadlines, restriction and child filtering.
+"""The family's rules: occurrences, deadlines, restriction and the child's scope.
 
-Pure functions without I/O - a direct translation of the app's
-`logic/recurrence.dart`, `logic/follow_up.dart` and `logic/child_scope.dart`,
-so HA (the server) and the app (which displays the data) calculate exactly
-the same. All times are naive, local `datetime`s just like the app's
-`DateTime.now()`.
+Pure functions without I/O. Originally a translation of the app's
+`logic/recurrence.dart`, `logic/follow_up.dart` and `logic/child_scope.dart`;
+since Del H only HA calculates and the app just shows HA's results. All
+times are naive, local `datetime`s (HA's local time).
 """
 
 from __future__ import annotations
@@ -135,6 +134,143 @@ def compute_availability(
     if recurrence == "weekly":
         return DONE_THIS_WEEK if (now.date() - last).days < 7 else AVAILABLE
     return AVAILABLE
+
+
+# ---- The child's task list (Del H2) -----------------------------------------------
+#
+# Every task gives the child ONE entry: its next occurrence (a day) and that
+# day's deadline. The app shows the entries as they are and calculates nothing.
+#
+# - A pending completion is the entry ("awaitingApproval") until a parent
+#   handles it.
+# - An approved or rejected completion consumes its occurrence, and the next
+#   normal occurrence comes forward. Exception: a rejected one-off task has no
+#   next occurrence, so it simply becomes available again.
+# - Missed occurrences (late and not done at midnight, see `Family.cleanup`)
+#   are consumed as well. A missed one-off task is deactivated for good.
+# - Weekly = 7 rolling days after the last handled completion (its
+#   `completedAt` day), or after a missed occurrence's day.
+# - An occurrence whose deadline passed before the task existed (or before
+#   the child was added) is skipped, so a new task is never overdue at once.
+
+AWAITING_APPROVAL = "awaitingApproval"
+OVERDUE = "overdue"
+UPCOMING = "upcoming"
+
+# Entries are shown for today and the next 4 days (5 calendar days).
+VIEW_DAYS = 5
+# How far ahead to look for a day the task is active on (weekdays repeat).
+_SEARCH_DAYS = 14
+
+
+def completion_day(completion: dict[str, Any]) -> date:
+    """The occurrence (day) a completion belongs to. Completions from before
+    0.5 have no `occurrenceDate`; their completion day is used."""
+    value = completion.get("occurrenceDate")
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            pass
+    return parse_dt(completion["completedAt"]).date()
+
+
+def _due_on(task: dict[str, Any], settings: dict[str, Any], day: date) -> datetime | None:
+    return effective_due(task, settings, datetime(day.year, day.month, day.day))
+
+
+def next_occurrence(
+    task: dict[str, Any],
+    completions: list[dict[str, Any]],
+    missed_days: set[date],
+    settings: dict[str, Any],
+    now: datetime,
+    since: datetime,
+) -> dict[str, Any] | None:
+    """The child's next occurrence of `task`, without the 5-day limit.
+
+    `completions` are this child's completions of this task, `missed_days` the
+    days of this child's missed occurrences of it, and `since` when the task
+    started to apply to the child. Returns `None` when there is no further
+    occurrence (a one-off task that is done, or no active weekday). The result
+    has `date`, `deadline` (`None` for optional tasks), `status` and
+    `completion` (the pending one, if any).
+    """
+    today = now.date()
+    pending = [c for c in completions if c["status"] == "pending"]
+    if pending:
+        day = completion_day(pending[0])
+        return {
+            "date": day,
+            "deadline": _due_on(task, settings, day),
+            "status": AWAITING_APPROVAL,
+            "completion": pending[0],
+        }
+
+    handled = [c for c in completions if c["status"] in ("approved", "rejected")]
+    recurrence = task.get("recurrence", "once")
+
+    if recurrence == "once":
+        if any(c["status"] == "approved" for c in handled):
+            return None
+        if not task.get("mandatory"):
+            return _occurrence(max(today, since.date()), None, now, completable_early=True)
+        # The first deadline after the task was created; it can be done before.
+        day = since.date()
+        if _due_on(task, settings, day) <= since:
+            day += timedelta(days=1)
+        return _occurrence(day, _due_on(task, settings, day), now, completable_early=True)
+
+    if recurrence == "unlimited":
+        # Always available. A mandatory one is due each day until it has been
+        # done (pending or approved) that day.
+        done = today in missed_days or any(
+            c["status"] == "approved" and completion_day(c) == today for c in handled
+        )
+        due = _due_on(task, settings, today)
+        if done or due is None or due <= since:
+            due = None
+        return _occurrence(today, due, now)
+
+    consumed = set(missed_days)
+    if recurrence == "weekly":
+        start = since.date()
+        for completion in handled:
+            start = max(start, parse_dt(completion["completedAt"]).date() + timedelta(days=7))
+        for day in missed_days:
+            start = max(start, day + timedelta(days=7))
+        if not task.get("mandatory"):
+            start = max(start, today)  # an optional task is never overdue
+    else:  # daily
+        consumed |= {completion_day(c) for c in handled}
+        start = max(today, since.date())
+
+    for offset in range(_SEARCH_DAYS):
+        day = start + timedelta(days=offset)
+        if day in consumed or not is_active_on(task, datetime(day.year, day.month, day.day)):
+            continue
+        due = _due_on(task, settings, day)
+        if due is not None and due <= since:
+            continue
+        return _occurrence(day, due, now)
+    return None
+
+
+def _occurrence(
+    day: date, deadline: datetime | None, now: datetime, completable_early: bool = False
+) -> dict[str, Any]:
+    if deadline is not None and now > deadline:
+        status = OVERDUE
+    elif day > now.date() and not completable_early:
+        status = UPCOMING
+    else:
+        status = AVAILABLE
+    return {"date": day, "deadline": deadline, "status": status, "completion": None}
+
+
+def in_view(occurrence: dict[str, Any] | None, now: datetime) -> bool:
+    """Whether the entry is shown: within the 5-day horizon."""
+    return occurrence is not None and occurrence["date"] < now.date() + timedelta(days=VIEW_DAYS)
 
 
 # ---- Follow-up ----------------------------------------------------------------
@@ -310,23 +446,3 @@ def is_action_allowed_for_child(action: dict[str, Any], child_id: str) -> bool:
 def task_applies_to_child(task: dict[str, Any], child_id: str) -> bool:
     assigned = task.get("assignedChildIds")
     return not assigned or child_id in assigned
-
-
-def filter_state_for_child(state: dict[str, Any], child_id: str) -> dict[str, Any]:
-    """Only what one child's tablet needs - no siblings' data."""
-    paid_out = state.get("paidOutOreByChild") or {}
-    suspensions = state.get("restrictionSuspensions") or {}
-    return {
-        **state,
-        "children": [c for c in state.get("children", []) if c["id"] == child_id],
-        "tasks": [t for t in state.get("tasks", []) if task_applies_to_child(t, child_id)],
-        "completions": [c for c in state.get("completions", []) if c["childId"] == child_id],
-        "balanceAdjustments": [
-            a for a in state.get("balanceAdjustments", []) if a["childId"] == child_id
-        ],
-        "totalPaidOutOre": 0,
-        "paidOutOreByChild": {child_id: paid_out[child_id]} if child_id in paid_out else {},
-        "restrictionSuspensions": (
-            {child_id: suspensions[child_id]} if child_id in suspensions else {}
-        ),
-    }

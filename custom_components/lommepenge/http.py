@@ -10,9 +10,12 @@ to the rest of Home Assistant.
     GET  /api/lommepenge/download/{token}/...   APK for the first installation
     GET  /api/lommepenge/app.apk                APK without a code (devices without camera)
     POST /api/lommepenge/pair                   pairing code -> device key
-    GET  /api/lommepenge/state                  the family's data   (signed)
+    GET  /api/lommepenge/state                  the current state   (signed)
     POST /api/lommepenge/action                 perform an action   (signed)
+    GET  /api/lommepenge/history                history, 30 days    (signed)
     GET  /api/lommepenge/apk                    APK for an update   (signed)
+
+The contract the app is built against is documented in `docs/app-api.md`.
 
 Error messages for the app follow the language chosen in the app (sent in
 `X-Lommepenge-Language`); everything else follows the language chosen for the
@@ -21,6 +24,7 @@ integration. Neither the browser's nor HA's language is ever used.
 
 from __future__ import annotations
 
+from datetime import date
 from html import escape
 from http import HTTPStatus
 from ipaddress import ip_address
@@ -40,7 +44,7 @@ from homeassistant.helpers.network import NoURLAvailableError, get_url, is_cloud
 from homeassistant.util import dt as dt_util, network as network_util
 
 from .const import API_PREFIX, DOMAIN, ROLE_CHILD, ROLE_PARENT, ROLE_SCREEN
-from .family import FamilyError
+from .family import HISTORY_TYPES, FamilyError
 from .i18n import normalize_language, translate
 from .releases import GitHubError
 from .runtime import (
@@ -73,6 +77,7 @@ def async_register_views(hass: HomeAssistant) -> None:
         PairView,
         StateView,
         ActionView,
+        HistoryView,
         UpdateApkView,
         AppApkView,
     ):
@@ -138,8 +143,9 @@ def _require_local(request: web.Request) -> None:
         raise web.HTTPForbidden(text=translate("local_only", _language(request)))
 
 
-def _error(status: HTTPStatus, message: str) -> web.Response:
-    return web.json_response({"error": message}, status=status)
+def _error(status: HTTPStatus, message: str, code: str) -> web.Response:
+    """`error` is shown to the user; `code` is stable for the app to act on."""
+    return web.json_response({"error": message, "code": code}, status=status)
 
 
 class _LocalView(HomeAssistantView):
@@ -157,7 +163,9 @@ class _SignedView(_LocalView):
         runtime = _runtime(request)
         headers = request.headers  # case-insensitive lookups
         try:
-            device = runtime.verify(headers, request.method, request.path, body)
+            # The signed path is the request target exactly as sent, with
+            # its query string (e.g. `/api/lommepenge/history?before=...`).
+            device = runtime.verify(headers, request.method, request.raw_path, body)
         except AuthError as err:
             # `code` tells the app what to do: only an unknown/revoked device
             # or a wrong key means "connect again". On `clock_skew` the app
@@ -370,7 +378,9 @@ class PairView(_LocalView):
             body = json.loads(await request.read() or b"{}")
             token = body["token"]
         except (ValueError, KeyError, TypeError):
-            return _error(HTTPStatus.BAD_REQUEST, translate("invalid_request", language))
+            return _error(
+                HTTPStatus.BAD_REQUEST, translate("invalid_request", language), "invalid_request"
+            )
         try:
             device = await runtime.async_redeem_pairing(
                 str(token),
@@ -380,9 +390,9 @@ class PairView(_LocalView):
                 },
             )
         except TooManyPairingAttempts as err:
-            return _error(HTTPStatus.TOO_MANY_REQUESTS, err.translate(language))
+            return _error(HTTPStatus.TOO_MANY_REQUESTS, err.translate(language), err.key)
         except PairingError as err:
-            return _error(HTTPStatus.GONE, err.translate(language))
+            return _error(HTTPStatus.GONE, err.translate(language), err.key)
         return web.json_response(
             {
                 "deviceId": device["id"],
@@ -417,6 +427,7 @@ class ActionView(_SignedView):
             return _error(
                 HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
                 translate("request_too_large", _language(request)),
+                "request_too_large",
             )
         runtime, device = await self._device(request, body)
         language = _language(request, runtime)
@@ -425,14 +436,49 @@ class ActionView(_SignedView):
             if not isinstance(action, dict):
                 raise ValueError
         except ValueError:
-            return _error(HTTPStatus.BAD_REQUEST, translate("invalid_action", language))
+            return _error(
+                HTTPStatus.BAD_REQUEST, translate("invalid_action", language), "invalid_action"
+            )
         try:
             await runtime.async_apply(action, device=device)
         except ForbiddenError as err:
-            return _error(HTTPStatus.FORBIDDEN, err.translate(language))
+            return _error(HTTPStatus.FORBIDDEN, err.translate(language), err.key)
         except FamilyError as err:
-            return _error(HTTPStatus.BAD_REQUEST, err.translate(language))
+            return _error(HTTPStatus.BAD_REQUEST, err.translate(language), err.key)
+        # The new state: the app shows the result only now that HA has confirmed.
         return web.json_response(runtime.state_for(device))
+
+
+class HistoryView(_SignedView):
+    """History on request (Del H2): 30 days per page, newest first.
+
+    Query: `before` (YYYY-MM-DD, exclusive; default tomorrow), `childId`,
+    `types` (comma-separated, e.g. `approved,rejected`).
+    """
+
+    url = f"{API_PREFIX}/history"
+    name = "api:lommepenge:history"
+
+    async def get(self, request: web.Request) -> web.Response:
+        runtime, device = await self._device(request, b"")
+        language = _language(request, runtime)
+        query = request.query
+        try:
+            before = date.fromisoformat(query["before"]) if "before" in query else None
+            types = None
+            if query.get("types"):
+                types = set(query["types"].split(","))
+                if not types <= set(HISTORY_TYPES):
+                    raise ValueError
+        except ValueError:
+            return _error(
+                HTTPStatus.BAD_REQUEST, translate("invalid_request", language), "invalid_request"
+            )
+        try:
+            history = runtime.history_for(device, before, query.get("childId") or None, types)
+        except ForbiddenError as err:
+            return _error(HTTPStatus.FORBIDDEN, err.translate(language), err.key)
+        return web.json_response(history)
 
 
 class AppApkView(_LocalView):

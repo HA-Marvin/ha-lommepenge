@@ -357,3 +357,135 @@ async def test_home_page_from_ha(
     assert "Download the app (.apk, version 1.1.0)" in html
     assert 'href="/api/lommepenge/app.apk"' in html
     assert "Add device" in html
+
+
+async def test_state_is_the_current_view(
+    hass: HomeAssistant, config_entry: MockConfigEntry, hass_client_no_auth, freezer
+) -> None:
+    """Del H1: HA sends only the current state, calculated per child - no history."""
+    freezer.move_to("2026-11-23 12:00:00+01:00")
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+    runtime = await setup_entry(hass, config_entry)
+    await add_child(runtime, "emma", "Emma")
+    await add_child(runtime, "oscar", "Oscar")
+    client = await hass_client_no_auth()
+    parent = await paired_app(hass, config_entry, client, "Mum", ROLE_PARENT)
+    tablet = await paired_app(hass, config_entry, client, "Emma's tablet", ROLE_CHILD, "emma")
+    await parent.action(
+        "create_task",
+        {"id": "t1", "title": "Dishes", "amountOre": 500, "recurrence": "daily", "mandatory": True},
+    )
+
+    # The child marks it as done with the app's own completion id; a retry
+    # (e.g. after a timeout) is a success without a second completion.
+    for _ in range(2):
+        response = await tablet.action(
+            "complete_task", {"taskId": "t1", "childId": "emma", "completionId": "app-c1"}
+        )
+        assert response.status == 200
+        state = await response.json()
+        assert state["children"][0]["tasks"][0]["status"] == "awaitingApproval"
+    # (Adding devices reloads the entry, so look the runtime up again.)
+    assert len(config_entry.runtime_data.family.data["completions"]) == 1
+
+    assert state["today"] == "2026-11-23"
+    assert state["serverTime"].startswith("2026-11-23T12:00")
+    assert [c["name"] for c in state["children"]] == ["Emma"]
+    for key in ("approvals", "tasks", "settings", "pinHash", "completions", "balanceAdjustments"):
+        assert key not in state
+    entry = state["children"][0]["tasks"][0]
+    assert entry["completionId"] == "app-c1" and entry["deadline"] == "2026-11-23T18:00:00.000"
+
+    state = await (await parent.state()).json()
+    assert [c["name"] for c in state["children"]] == ["Emma", "Oscar"]
+    assert state["children"][1]["tasks"][0]["status"] == "available"
+    assert [a["completionId"] for a in state["approvals"]] == ["app-c1"]
+    assert state["approvals"][0]["childName"] == "Emma"
+    assert [t["id"] for t in state["tasks"]] == ["t1"]
+    assert state["settings"]["defaultDueTime"] == "18:00"
+    assert "completions" not in state and "balanceAdjustments" not in state
+
+    response = await parent.action("approve_completion", {"completionId": "app-c1"})
+    state = await response.json()
+    assert state["approvals"] == []
+    emma = state["children"][0]
+    assert emma["balanceOre"] == 500 and emma["earnedThisWeekOre"] == 500
+    assert emma["tasks"][0]["date"] == "2026-11-24"
+    # Approving again (retry, or the other parent) is fine.
+    assert (await parent.action("approve_completion", {"completionId": "app-c1"})).status == 200
+
+    response = await parent.action("reject_completion", {"completionId": "app-c1"})
+    assert response.status == 400
+    assert (await response.json())["code"] == "completion_already_handled"
+
+
+async def test_history_on_request(
+    hass: HomeAssistant, config_entry: MockConfigEntry, hass_client_no_auth, freezer
+) -> None:
+    freezer.move_to("2026-11-23 12:00:00+01:00")
+    await hass.config.async_set_time_zone("Europe/Copenhagen")
+    runtime = await setup_entry(hass, config_entry)
+    await add_child(runtime, "emma", "Emma")
+    await add_child(runtime, "oscar", "Oscar")
+    await runtime.async_apply(
+        {
+            "type": "adjust_balance",
+            "payload": {"id": "a1", "childId": "oscar", "amountOre": 1000, "note": "Birthday"},
+        }
+    )
+    freezer.move_to("2026-11-23 12:01:00+01:00")
+    await runtime.async_apply(
+        {
+            "type": "adjust_balance",
+            "payload": {"id": "a2", "childId": "emma", "amountOre": -200, "note": "Sweets"},
+        }
+    )
+    client = await hass_client_no_auth()
+    parent = await paired_app(hass, config_entry, client, "Mum", ROLE_PARENT)
+    tablet = await paired_app(hass, config_entry, client, "Emma's tablet", ROLE_CHILD, "emma")
+
+    response = await parent.get_signed("/api/lommepenge/history")
+    assert response.status == 200
+    page = await response.json()
+    assert [i["id"] for i in page["items"]] == ["a2", "a1"]
+    assert page["before"] == "2026-11-24" and page["from"] == "2026-10-25"
+    assert page["nextBefore"] is None
+    assert page["items"][0] == {
+        "id": "a2",
+        "type": "adjustment",
+        "at": "2026-11-23T12:01:00.000",
+        "childId": "emma",
+        "childName": "Emma",
+        "taskId": None,
+        "taskTitle": None,
+        "amountOre": -200,
+        "completedAt": None,
+        "late": False,
+        "note": "Sweets",
+    }
+
+    # The query string is part of the signature.
+    page = await (
+        await parent.get_signed("/api/lommepenge/history?childId=oscar&types=adjustment")
+    ).json()
+    assert [i["id"] for i in page["items"]] == ["a1"]
+    page = await (await parent.get_signed("/api/lommepenge/history?before=2026-11-23")).json()
+    assert page["items"] == [] and page["from"] == "2026-10-24"
+
+    # A child's tablet only gets its own child's history.
+    page = await (await tablet.get_signed("/api/lommepenge/history")).json()
+    assert [i["id"] for i in page["items"]] == ["a2"]
+    response = await tablet.get_signed("/api/lommepenge/history?childId=oscar")
+    assert response.status == 403
+    assert (await response.json())["code"] == "forbidden_action"
+
+    response = await parent.get_signed("/api/lommepenge/history?before=yesterday")
+    assert response.status == 400
+    assert (await response.json())["code"] == "invalid_request"
+    response = await parent.get_signed("/api/lommepenge/history?types=locks")
+    assert response.status == 400
+
+    # A query string that was not signed is refused.
+    headers = parent.headers("GET", "/api/lommepenge/history", b"")
+    response = await client.get("/api/lommepenge/history?childId=oscar", headers=headers)
+    assert response.status == 401

@@ -44,6 +44,9 @@ class LommepengeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_restricted: dict[str, bool] = {}
 
     async def _async_update_data(self) -> dict[str, Any]:
+        # The midnight cleanup runs on the first update after midnight (and
+        # catches up at startup if HA was down at midnight).
+        await self.runtime.async_cleanup()
         return self._compute()
 
     @callback

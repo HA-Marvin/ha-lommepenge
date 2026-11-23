@@ -172,4 +172,4 @@ def test_summary_and_state(family: Family) -> None:
 
     state = family.state_json("The Family", evening)
     assert [c["name"] for c in state["children"]] == ["Emma", "Oscar"]
-    assert state["familySettings"]["defaultDueTime"] == "18:00"
+    assert state["settings"]["defaultDueTime"] == "18:00"

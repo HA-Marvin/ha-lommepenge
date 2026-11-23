@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import hashlib
 import hmac
 import re
@@ -40,10 +40,13 @@ from .const import (
     SIGNATURE_MAX_AGE,
     SUBENTRY_DEVICE,
 )
-from .family import Family
+from .family import Family, migrate_family
 from .i18n import LocalizedError, normalize_language
 
 STORAGE_VERSION = 1
+# 1.2 (Del H): completions have `occurrenceDate`, the family has `missed` and
+# `cleanedThrough`. A minor version, so an older integration can still read it.
+STORAGE_MINOR_VERSION = 2
 SAVE_DELAY = 2
 
 # The pairing code can be typed on a device without a camera: 8 characters
@@ -81,6 +84,19 @@ class ForbiddenError(LocalizedError):
     """The device's role may not perform the action."""
 
 
+class _FamilyStore(Store[dict[str, Any]]):
+    """The family's storage, with migration of older stored data."""
+
+    async def _async_migrate_func(
+        self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        if old_major_version > STORAGE_VERSION:
+            raise NotImplementedError
+        if old_major_version == 1 and old_minor_version < 2 and old_data.get("family"):
+            migrate_family(old_data["family"], local_now())
+        return old_data
+
+
 def local_now() -> datetime:
     """HA's local time as a naive `datetime` (same form as the app's times)."""
     return dt_util.now().replace(tzinfo=None)
@@ -98,8 +114,12 @@ class LommepengeRuntime:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
         self.entry = entry
-        self._store: Store[dict[str, Any]] = Store(
-            hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}", private=True
+        self._store: Store[dict[str, Any]] = _FamilyStore(
+            hass,
+            STORAGE_VERSION,
+            f"{DOMAIN}.{entry.entry_id}",
+            private=True,
+            minor_version=STORAGE_MINOR_VERSION,
         )
         self.family = Family()
         self.devices: dict[str, dict[str, Any]] = {}
@@ -183,14 +203,27 @@ class LommepengeRuntime:
             self.coordinator.async_refresh_now()
         return result
 
+    async def async_cleanup(self) -> list[dict[str, Any]]:
+        """The midnight cleanup (Del H2). Called by the coordinator every 30
+        seconds; it only does something once a day has ended."""
+        async with self._lock:
+            before = self.family.data.get("cleanedThrough")
+            records = self.family.cleanup(local_now())
+        if records or self.family.data.get("cleanedThrough") != before:
+            self.async_schedule_save()
+        return records
+
     # ---- The app's data ------------------------------------------------------------
 
     def state_for(self, device: dict[str, Any]) -> dict[str, Any]:
         """What a device gets to see: the whole family, or only one child."""
-        state = self.family.state_json(self.family_name, local_now())
         if device["role"] == ROLE_CHILD:
-            state = logic.filter_state_for_child(state, device.get("childId") or "")
+            # A tablet without a child (should not happen) sees no child.
+            state = self.family.state_json(
+                self.family_name, local_now(), device.get("childId") or ""
+            )
         else:
+            state = self.family.state_json(self.family_name, local_now())
             # The parent part on the screen and phones is locked with the family's PIN.
             state["pinHash"] = self.entry.data.get(CONF_PIN_HASH)
             state["pinSalt"] = self.entry.data.get(CONF_PIN_SALT)
@@ -204,6 +237,23 @@ class LommepengeRuntime:
         release = self.releases.data if self.releases is not None else None
         state["appUpdate"] = release.as_json() if release is not None else None
         return state
+
+    def history_for(
+        self,
+        device: dict[str, Any],
+        before: date | None,
+        child_id: str | None,
+        types: set[str] | None,
+    ) -> dict[str, Any]:
+        """A page of history. A child's tablet only gets its own child's."""
+        if device["role"] == ROLE_CHILD:
+            own = device.get("childId") or ""
+            if child_id is not None and child_id != own:
+                raise ForbiddenError("forbidden_action")
+            child_id = own
+        if before is None:
+            before = local_now().date() + timedelta(days=1)
+        return self.family.history(before, child_id, types)
 
     # ---- Devices and pairing ---------------------------------------------------------
 
